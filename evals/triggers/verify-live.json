@@ -1,0 +1,12 @@
+[
+  {"query": "I changed the button colour in app/style.css. Make sure it actually looks right before you tell me it's done.", "should_trigger": true},
+  {"query": "Check the page in app/index.html on a phone-sized screen in light and dark mode.", "should_trigger": true},
+  {"query": "Does the signup form still work in Safari after the CSS change?", "should_trigger": true},
+  {"query": "Take screenshots of app/index.html at every size so I can review the layout.", "should_trigger": true},
+  {"query": "The layout overflows on small screens. Verify it in a real browser.", "should_trigger": true},
+  {"query": "Try to break the form in app/index.html: empty input, double submit, refresh.", "should_trigger": true},
+  {"query": "What CSS framework does app/style.css use?", "should_trigger": false},
+  {"query": "Fix the off-by-one error in utils.py.", "should_trigger": false},
+  {"query": "Explain what object-fit: cover does.", "should_trigger": false},
+  {"query": "Add a docstring to slugify.", "should_trigger": false}
+]

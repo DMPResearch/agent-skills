@@ -22,6 +22,9 @@ if [ -z "${CR_SCRIPT_DIR:-}" ]; then
   CR_COPY="$(mktemp "${TMPDIR:-/tmp}/run-critics.XXXXXX")"; cp "$0" "$CR_COPY"
   CR_COPY_FILE="$CR_COPY" exec bash "$CR_COPY" "$@"
 fi
+# Critics keep the guard's blocks (keys, merges, pushes) but never its
+# reminders: a held Stop would push text past the VERDICT line.
+export AGENT_GUARD_ROLE=critic
 
 usage() {
   cat >&2 <<'EOF'
@@ -317,6 +320,7 @@ cat > "$OUT/summary.md" <<EOF
 - Implementer family: $IMPL
 - Mode: $(if [ -n "$PR" ]; then echo "--pr $PR (clean tree: head SHA identifies the reviewed code)"; else echo "local tree (match by digest)"; fi)
 - Credential-scan allowances: $(if [ -s "$SCAN_ALLOW_FILE" ]; then python3 -I "$SCAN" --list-allow "$SCAN_ALLOW_FILE"; else echo none; fi)
+- Guard hooks (information only, not part of the verdict): $(python3 -I "$HOME/.agents/hooks/guard.py" status 2>/dev/null | tr '\n' ';' || echo "not installed")
 - Date: $(date -u +%Y-%m-%dT%H:%MZ)
 
 | Critic | Model | Verdict | Transcript |

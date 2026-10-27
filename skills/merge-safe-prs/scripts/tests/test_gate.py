@@ -92,6 +92,26 @@ class PrStateTest(unittest.TestCase):
         rc, r = self.run_gate(world())
         self.assertEqual((rc, r["ready"]), (0, True))
 
+    def test_ready_leaves_a_token_for_the_merge_hook_and_not_ready_does_not(self):
+        d = tempfile.mkdtemp()
+        old = os.environ.get("AGENT_GUARD_STATE")
+        os.environ["AGENT_GUARD_STATE"] = d
+        try:
+            self.run_gate(world(runs=[]))
+            self.assertFalse(os.path.exists(os.path.join(d, "ready", "a" * 40 + ".json")))
+            self.run_gate(world())
+            with open(os.path.join(d, "ready", "a" * 40 + ".json")) as fh:
+                t = json.load(fh)
+            self.assertEqual((t["pr"], t["repo"], t["sha"]), ("7", "o/r", "a" * 40))
+            self.run_gate(world(runs=[]))
+            self.assertFalse(os.path.exists(os.path.join(d, "ready", "a" * 40 + ".json")),
+                             "a later NOT READY withdraws the token")
+        finally:
+            if old is None:
+                os.environ.pop("AGENT_GUARD_STATE")
+            else:
+                os.environ["AGENT_GUARD_STATE"] = old
+
     def test_missing_skipped_or_failed_required_check_blocks(self):
         for runs in ([], [dict(world()["runs"][0], conclusion="skipped"), world()["runs"][1]],
                      [dict(world()["runs"][0], conclusion="failure"), world()["runs"][1]],
@@ -216,6 +236,26 @@ class ScanSecretsTest(unittest.TestCase):
     def scan(self, d, *args):
         p = subprocess.run([sys.executable, "-I", self.SCAN, *args], cwd=d, capture_output=True, text=True)
         return p.returncode, p.stdout
+
+    def test_outgoing_scans_only_commits_no_remote_has(self):
+        d = self.repo({"ok.txt": "fine\n"})
+        bare = tempfile.mkdtemp()
+        subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+        g = ["git", "-C", d, "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(g + ["remote", "add", "origin", bare], check=True)
+        subprocess.run(g + ["push", "-q", "origin", "HEAD:refs/heads/main"], check=True)
+        subprocess.run(g + ["fetch", "-q", "origin"], check=True)
+        self.assertEqual(self.scan(d, "--outgoing", "HEAD")[0], 0)
+        with open(os.path.join(d, "c.sh"), "w") as fh:
+            fh.write("TOKEN=ghp_" + "Z" * 36 + "\n")
+        subprocess.run(g + ["add", "-A"], check=True)
+        subprocess.run(g + ["commit", "-q", "-m", "add"], check=True)
+        rc, out = self.scan(d, "--outgoing", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertNotIn("ghp_", out)
+        subprocess.run(g + ["push", "-q", "origin", "HEAD:refs/heads/main"], check=True)
+        subprocess.run(g + ["fetch", "-q", "origin"], check=True)
+        self.assertEqual(self.scan(d, "--outgoing", "HEAD")[0], 0, "already on a remote: nothing outgoing")
 
     def test_flags_key_material_without_printing_it(self):
         token = "ghp_" + "Z" * 36

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Links each skill into ~/.agents/skills (Codex), ~/.claude/skills (Claude Code)
-# and ~/.cursor/skills (Cursor). Re-run after pulling to pick up new skills.
+# and ~/.cursor/skills (Cursor), links hooks/ as ~/.agents/hooks and registers
+# the guard hook with all three (hooks/install_hooks.py). Re-run after pulling.
 # An existing real folder of the same name is moved to ~/.agents/skills-backup,
 # never deleted (a copy left inside a skills folder would load twice).
 set -eu
@@ -19,3 +20,11 @@ for name in $(ls "$SRC"); do
   done
   echo "linked $name"
 done
+HOOKS="$(cd "$(dirname "$0")/hooks" && pwd)"
+if [ -L "$HOME/.agents/hooks" ]; then rm "$HOME/.agents/hooks"
+elif [ -e "$HOME/.agents/hooks" ]; then
+  mkdir -p "$HOME/.agents/skills-backup/$STAMP"; mv "$HOME/.agents/hooks" "$HOME/.agents/skills-backup/$STAMP/agents-hooks"
+fi
+ln -s "$HOOKS" "$HOME/.agents/hooks"
+python3 -I "$HOOKS/install_hooks.py" "$STAMP"
+python3 -I "$HOOKS/guard.py" status || true

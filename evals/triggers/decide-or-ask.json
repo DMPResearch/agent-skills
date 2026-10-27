@@ -1,0 +1,12 @@
+[
+  {"query": "Add a config option for the request timeout in utils.py. Use whatever name and default you think fit.", "should_trigger": true},
+  {"query": "Refactor slugify in utils.py however you like, I don't mind the approach.", "should_trigger": true},
+  {"query": "There are two ways to cache the slug results, in memory or on disk. Pick one and go.", "should_trigger": true},
+  {"query": "The tests are slow. Do something about it; you decide what.", "should_trigger": true},
+  {"query": "Add input validation to the form in app/index.html. I haven't decided on the error copy, just make it reasonable.", "should_trigger": true},
+  {"query": "Should the new helper go in utils.py or a new module? Your call, then do it.", "should_trigger": true},
+  {"query": "What does slugify in utils.py return for an empty string?", "should_trigger": false},
+  {"query": "Explain the difference between a squash merge and a rebase merge.", "should_trigger": false},
+  {"query": "List the files in app/.", "should_trigger": false},
+  {"query": "Rename the variable s to text in utils.py line 3, exactly that and nothing else.", "should_trigger": false}
+]

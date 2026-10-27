@@ -17,12 +17,14 @@ blocks. A PR into a non-default branch is
 held to the union of its base's and the default branch's required checks,
 since that is where a stack lands. GitHub's own BLOCKED/UNSTABLE merge states
 block too. READY does NOT cover a reviewer's verdict: read that yourself.
+On READY it also writes a token the merge hook (hooks/guard.py) checks.
 """
 import importlib.util
 import json
 import os
 import subprocess
 import sys
+import time
 from urllib.parse import quote
 
 
@@ -235,7 +237,26 @@ def main(argv):
         for a in attention:
             print(f"attention: {a}")
         print(f"READY {sha}" if not reasons else "NOT READY: " + "; ".join(reasons))
+    ready_token(repo, view["number"], sha, ready=not reasons)
     return 0 if not reasons else 1
+
+
+def ready_token(repo, number, sha, ready=True):
+    """Record READY for the merge hook (hooks/guard.py), which accepts
+    `gh pr merge --match-head-commit <sha>` only within ten minutes of it.
+    A NOT READY read removes an earlier token for the same commit."""
+    d = os.path.join(os.environ.get("AGENT_GUARD_STATE", os.path.expanduser("~/.agents/guard-state")), "ready")
+    path = os.path.join(d, sha + ".json")
+    try:
+        if not ready:
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        os.makedirs(d, exist_ok=True)
+        with open(path, "w") as fh:
+            json.dump({"repo": repo, "pr": str(number), "sha": sha, "time": time.time()}, fh)
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

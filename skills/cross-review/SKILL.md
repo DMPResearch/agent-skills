@@ -75,7 +75,8 @@ Run from the checkout that holds the change (worktree root):
   Run it in the background (`run_in_background`) and wait for it to finish.
   Don't poll it.
 - Output goes to `/Volumes/DevBox/tmp/cross-review/<repo>-<sha>-<time>/`:
-  `summary.md`, one transcript per critic, `review.diff`, `full.diff`,
+  `summary.md` (it also records whether the guard hooks are installed and
+  trusted, for the owner to see; that line never changes the verdict), one transcript per critic, `review.diff`, `full.diff`,
   `prompt.txt`. Exit 0 = PASS, 1 = needs changes (fix first, even if
   another critic gave no verdict), 2 = a critic gave no verdict (not a pass:
   rerun or swap that critic), 3 = dry run. A verdict counts only as the exact

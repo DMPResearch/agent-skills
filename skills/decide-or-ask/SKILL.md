@@ -1,6 +1,6 @@
 ---
 name: decide-or-ask
-description: Decide non-critical questions yourself and keep working; ask the owner only about critical decisions. Use whenever you are about to ask the user a question, offer options, ask "should I proceed?", or stop to wait for input, and when choosing between approaches mid-task.
+description: Decide non-critical questions yourself and keep working; ask the owner only about critical decisions. Use whenever you are about to ask the user a question, offer options, ask "should I proceed?", or stop to wait for input, when the user leaves a choice to you ("your call", "whatever you think", "you decide") or you are choosing between approaches mid-task, and before any production deploy, release or other outward-facing step the user did not name explicitly.
 ---
 
 # Decide, or ask
@@ -30,6 +30,9 @@ below.
   `merge-safe-prs` authorization), any production deploy, app store
   submissions, emails or newsletters, public posts, comments that notify
   people, sending anything to an outside person or service for the first time.
+  A production deploy needs the owner to name it in this conversation ("deploy
+  to production", "run the release"). "Get it live", "ship it" or "finish it"
+  are not that OK: do the reversible part (fix, commit, PR), then ask.
 - **Money**: new paid services or plans, spending past an agreed budget,
   prices, plan limits, live payments.
 - **Security and access**: creating, rotating or sharing credentials,
@@ -88,3 +91,7 @@ question.
 - It isn't a license to guess facts. Look them up, or say they're unknown.
 - It doesn't hide decisions. Everything you decided is in PLAN.md and the
   report.
+
+With the guard hooks installed, Claude Code's first AskUserQuestion in a
+session that has not loaded this skill is bounced once with a reminder. A
+critical question goes through when you ask again.

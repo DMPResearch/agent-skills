@@ -92,6 +92,12 @@ Then check what the script can't:
 gh pr merge <pr> --squash --match-head-commit <sha-from-READY-line>
 ```
 
+- The guard hook (`~/.agents/hooks/guard.py`, installed by the repo's
+  `install.sh`) refuses `gh pr merge` with `--admin` or `--auto`, without
+  `--match-head-commit`, or with no `READY` for that sha from `pr-state.py`
+  in the last ten minutes. When the owner explicitly OKs merging this PR past
+  a red check, prefix the command with `AGENT_GUARD_OWNER_OK=<pr>@<sha>`.
+  Write that token only after their OK, never to get past the hook.
 - Use the repo's merge method: check recent `main` history and the repo
   settings. If neither settles it, squash.
 - `--match-head-commit` is mandatory: if someone pushed since your read,

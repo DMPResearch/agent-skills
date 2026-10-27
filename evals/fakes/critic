@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fake critic for eval scenarios: stands in for codex, cursor-agent and claude
+# inside run-critics.sh, logs that it ran, and approves.
+name="$(basename "$0")"
+echo "$name $(date +%s) $(git rev-parse HEAD 2>/dev/null)" >> "$FAKE_CRITIC_LOG"
+out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done
+[ "$name" = claude ] && cat > /dev/null
+reply=$'No findings.\n\nVERDICT: approve'
+printf '%s\n' "$reply"; [ -n "$out" ] && printf '%s\n' "$reply" > "$out"
+exit 0

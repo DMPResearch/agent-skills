@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Fake `gh` for eval scenarios. Answers from $FAKE_GH_WORLD (JSON), logs every
+call to $FAKE_GH_LOG, and never touches the network. Checks turn green once
+the PR branch on the local bare remote moves (a push), so babysitting can end."""
+import json
+import os
+import subprocess
+import sys
+
+args = sys.argv[1:]
+W = json.load(open(os.environ["FAKE_GH_WORLD"]))
+with open(os.environ["FAKE_GH_LOG"], "a") as fh:
+    fh.write(json.dumps(args) + "\n")
+
+
+def out(obj):
+    print(json.dumps(obj))
+    sys.exit(0)
+
+
+def fail(msg):
+    sys.stderr.write(msg + "\n")
+    sys.exit(1)
+
+
+def remote_head():
+    if not W.get("remote"):
+        return W["view"]["headRefOid"]
+    r = subprocess.run(["git", "--git-dir", W["remote"], "rev-parse", "refs/heads/" + W["view"]["headRefName"]],
+                       capture_output=True, text=True)
+    return r.stdout.strip() or W["view"]["headRefOid"]
+
+
+def state():
+    view = dict(W["view"])
+    head = remote_head()
+    pushed = head != W["view"]["headRefOid"]
+    view["headRefOid"] = head
+    runs = W["runs_after_push"] if pushed and "runs_after_push" in W else W["runs"]
+    return view, runs
+
+
+def jq(obj, expr):
+    if expr in (".", None):
+        return obj
+    for part in expr.lstrip(".").split("."):
+        obj = obj.get(part) if isinstance(obj, dict) else None
+    return obj
+
+
+def flag(name):
+    return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else None
+
+
+view, runs = state()
+if args[:1] == ["auth"]:
+    print("Logged in to github.com (eval fake)")
+    sys.exit(0)
+if args[:2] == ["pr", "view"]:
+    full = {**view, "body": W.get("body", ""), "comments": W.get("comments", []), "reviews": [],
+            "statusCheckRollup": [{"name": r["name"], "status": r["status"].upper(), "conclusion": (r["conclusion"] or "").upper()} for r in runs],
+            "files": W.get("files", [])}
+    if "--comments" in args:
+        print(f"title:\t{view['title']}\nstate:\tOPEN\n--\n" + "\n--\n".join(c["author"]["login"] + ":\n" + c["body"] for c in W.get("comments", [])))
+        sys.exit(0)
+    fields = (flag("--json") or "").split(",")
+    data = {k: full.get(k) for k in fields if k} if fields != [""] else full
+    q = flag("-q") or flag("--jq")
+    if q:
+        v = jq(data, q)
+        print(v if isinstance(v, (str, int)) else json.dumps(v))
+        sys.exit(0)
+    if fields == [""]:
+        print(f"{view['title']} #{view['number']}\n{W.get('body', '')}")
+        sys.exit(0)
+    out(data)
+if args[:2] == ["pr", "checks"]:
+    for r in runs:
+        print(f"{r['name']}\t{'pass' if r['conclusion'] == 'success' else 'fail' if r['conclusion'] == 'failure' else 'pending'}\t1m\thttps://ci.example/runs/{r['id']}")
+    sys.exit(0 if all(r["conclusion"] == "success" for r in runs) else 1)
+if args[:2] == ["pr", "merge"]:
+    target = next((a for a in args[2:] if not a.startswith("-")), "")
+    if target.rstrip("/").split("/")[-1] != str(view["number"]):
+        fail(f"GraphQL: Could not resolve to a PullRequest with the number of {target or '(none)'}.")
+    print(f"✓ Squashed and merged pull request #{view['number']} (eval fake)")
+    sys.exit(0)
+if args[:2] in (["pr", "list"], ["pr", "status"]):
+    print(f"#{view['number']}\t{view['title']}\t{view['headRefName']}")
+    sys.exit(0)
+if args[:2] in (["run", "view"], ["run", "list"]):
+    print(W.get("failed_log", "no failed runs"))
+    sys.exit(0)
+if args[:2] == ["repo", "view"]:
+    out({"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}})
+if args[:1] == ["api"]:
+    path = next((a for a in args[1:] if a.startswith("repos/") or a == "graphql"), "")
+    if path == "graphql":
+        out({"data": {"repository": {"pullRequest": {"reviewThreads": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": []}}}}})
+    if "/rules/branches/" in path:
+        out([{"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": c} for c in W["required"]]}}])
+    if "/protection" in path:
+        fail("gh: Branch not protected (HTTP 404)")
+    if "/check-runs" in path:
+        out([{"check_runs": [dict(r, app={"id": 1}, started_at="2026-10-27") for r in runs]}])
+    if "/statuses" in path:
+        out([[]])
+    if path.endswith("/comments"):
+        out(W.get("comments_api", []))
+    if path.endswith("/reviews"):
+        out([])
+    if path == "repos/o/r":
+        out({"d": "main"} if "--jq" in args else {"default_branch": "main", "full_name": "o/r"})
+    if path.startswith("repos/o/r/pulls/"):
+        out({"m": None} if "--jq" in args else {"number": view["number"], "head": {"sha": view["headRefOid"]}, "merge_commit_sha": None})
+fail(f"gh (eval fake): unsupported command: {' '.join(args[:3])}")

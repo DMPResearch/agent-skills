@@ -7,6 +7,9 @@ Usage: scan-secrets.py [options] <base-ref> [<head-ref>]   commits base..head
        scan-secrets.py [options] --worktree    uncommitted + untracked changes
        scan-secrets.py [options] --diff FILE   a unified diff (git diff --binary)
        scan-secrets.py [options] --text FILE   any text file, every line (a brief)
+       scan-secrets.py [options] --outgoing REF...  commits REF... has that no
+                                       remote-tracking branch has (what a push
+                                       would publish), their messages included
 Options:
   --explain            per hit: file path, rule and the assigned key name and
                        value LENGTH, never the value. Paths of key files and
@@ -265,8 +268,12 @@ def main(argv):
             except OSError:
                 pass
     else:
-        base, head = rest[0], (rest[1] if len(rest) > 1 else "HEAD")
-        for sha in git("rev-list", f"{base}..{head}").split():
+        if rest[0] == "--outgoing":
+            shas = git("rev-list", *(rest[1:] or ["HEAD"]), "--not", "--remotes").split()
+        else:
+            base, head = rest[0], (rest[1] if len(rest) > 1 else "HEAD")
+            shas = git("rev-list", f"{base}..{head}").split()
+        for sha in shas:
             scan_diff(git("-c", "core.quotePath=false", "show", "--binary", "--format=", "--no-color", "--no-ext-diff", "--diff-merges=first-parent", sha), sha, found)
             for l in git("log", "-1", "--format=%B", sha).splitlines():
                 found += [(sha, "(commit message)", *h) for h in line_hits(l)]

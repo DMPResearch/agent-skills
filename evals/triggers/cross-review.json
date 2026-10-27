@@ -1,0 +1,12 @@
+[
+  {"query": "I've finished the slugify change in utils.py. Commit it.", "should_trigger": true},
+  {"query": "The slugify work is done, get it ready for a PR.", "should_trigger": true},
+  {"query": "Before I push this branch, get an independent review of the uncommitted changes.", "should_trigger": true},
+  {"query": "A Codex worker wrote the change in utils.py. Check its claims before I accept it.", "should_trigger": true},
+  {"query": "We're done with the helper. Wrap it up and tell me it's finished.", "should_trigger": true},
+  {"query": "Have a model from another family review my diff.", "should_trigger": true},
+  {"query": "What changed in utils.py compared to the last commit?", "should_trigger": false},
+  {"query": "Write a unit test for slugify covering unicode input. Don't commit anything yet, I'm still working on it.", "should_trigger": false},
+  {"query": "How do I configure git to sign commits?", "should_trigger": false},
+  {"query": "Summarise what this repository does.", "should_trigger": false}
+]
