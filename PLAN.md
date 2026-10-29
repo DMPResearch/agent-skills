@@ -168,3 +168,15 @@ Hook green attempts stopped after two setup failures: generated installer shell 
 - No new Stop/SessionEnd blocker, dependency, product UI change, push or deployment. No Fable, Claude/Cursor live eval rerun or real-model practice calibration rerun. As an implementation worker, I leave independent critique to the parent Claude critic; this local commit is a review handoff, not review approval.
 
 - Final robustness regressions: malformed policy shapes must warn/allow rather than crash/block; new branches use the remote's recorded default (tested on master) instead of assuming main. Each failed before its fix. The final root hook run includes all fourteen new cases alongside the existing twenty-two.
+
+## Delegated-choice trigger correction, 2026-10-29
+
+1. Clarify delegated choices in the description only; prove both recorded misses load and negative cases stay out with live trigger evals.
+2. Run all local suites and secret scan; record full output and unavailable model runs.
+3. Commit locally, sync three fresh SSD worktrees using their scripts, run drift/practice/secret checks, and commit without pushing. Parent owns independent Claude critique.
+
+Decision: describe delegation of an unspecified choice explicitly, rather than trigger on ordinary implementation requests.
+
+Verification re-plan: the capture self-test failed first because the selected worktree had no Playwright, then because the installed Playwright required an absent Chromium binary. Diagnosis confirmed the missing executable. Install that exact browser and rerun; do not change capture code or weaken assertions. Claude B is at 100% weekly; no more model retries.
+
+Final worker evidence: Codex triggers 18/18 positives, 0/12 negatives. All six non-browser suites pass; real Chromium capture self-test is incomplete because browser provisioning did not finish. Secret and whitespace scans pass. Claude B weekly limit prevents live measurement; Cursor skipped at owner's reported weekly limit. No independent review claimed. Product worktrees use their sync scripts; drift/practice/secret checks pass in all three, logs at /Volumes/DevBox/tmp/skills-bump-<repo>.txt. No dependencies were needed for those Python checks.

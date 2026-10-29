@@ -1,5 +1,38 @@
 # Eval results
 
+## Delegated-choice triggers, 2026-10-29
+
+Description-only correction: explicitly covers delegation of an unspecified
+choice to the agent's judgment, including names, defaults and wording.
+The six positive and four negative prompts and scoring are unchanged.
+
+Codex live (configured gpt-6.1-sol), three runs per prompt, guard off:
+18/18 positive loads, 0/12 false loads; all 30 processes completed normally.
+Both previously missed prompts loaded in 3/3 runs each.
+
+Claude B was attempted, but all 30 processes exited 1, so there is no valid
+Claude trigger measurement. The subsequent /usage check reports 100% weekly
+usage, resetting November 1 at 13:59 Europe/Bucharest. The generated report's
+0/18 and 0/12 are not usable rates; its negative-case error wording is also
+misleading for crashed processes. Cursor was not attempted because the owner
+reported its weekly limit. No unavailable account was retried.
+
+Local suites pass: 36 hook, five eval/fixture, 93 tooling/calibration,
+46 merge/scanner, 38 cross-review runner and four reference-capture tests.
+The real-browser self-test could not produce a report: Playwright first
+was absent from the selected folder; the installed copy then required a missing
+Chromium binary. Isolated full and headless installations downloaded their
+archives but did not produce usable executables; both were stopped. This
+self-test is incomplete, not a pass. Logs: `agent-skills-trigger-capture-retry.txt`
+and `skills-trigger-headless-install.txt` under `/Volumes/DevBox/tmp/`.
+Whitespace and secret scans pass. Behaviour scenarios and the real-model
+practice-audit calibration were not rerun for this description-only change.
+Full output: `/Volumes/DevBox/tmp/agent-skills-trigger-suites.txt`.
+Live evidence: `/Volumes/DevBox/tmp/decide-or-ask-triggers/results.json`.
+Account evidence: `/Volumes/DevBox/tmp/skills-trigger-claude-availability.txt`.
+Independent Claude critique belongs to the parent orchestrator and has not
+run in this worker. No push or paid CI run.
+
 ## Hooks and eval coverage, 2026-10-29
 
 Codex live runs use the configured gpt-6.1-sol. One run per trigger prompt,

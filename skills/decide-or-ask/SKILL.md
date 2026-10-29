@@ -1,6 +1,6 @@
 ---
 name: decide-or-ask
-description: Decide non-critical questions yourself and keep working; ask the owner only about critical decisions. Use whenever you are about to ask the user a question, offer options, ask "should I proceed?", or stop to wait for input, when the user leaves a choice to you ("your call", "whatever you think", "you decide") or you are choosing between approaches mid-task, and before any production deploy, release or other outward-facing step the user did not name explicitly.
+description: Decide non-critical questions yourself and keep working; ask the owner only about critical decisions. Use whenever you are about to ask the user a question, offer options, ask "should I proceed?", or stop to wait for input, when the user delegates an unspecified choice to your judgment, including names, defaults or wording ("your call", "use whatever name and default you think fit", "just make it reasonable") or you are choosing between approaches mid-task, and before any production deploy, release or other outward-facing step the user did not name explicitly.
 ---
 
 # Decide, or ask
