@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "rules": [],
+  "length_policy": {
+    "exemptions_source": "scripts/check-file-size.mjs",
+    "legacy": "scripts/file-size-legacy.json"
+  }
+}

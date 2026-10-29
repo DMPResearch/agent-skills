@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "UI-REPO-001",
+      "rule": "Use the approved product accent only for the roles listed in the repo design system.",
+      "check": "Compare rendered controls in both themes with the repo design-system reference page.",
+      "kind": "judgment",
+      "violation": "A neutral navigation control adopts the accent without an approved role."
+    },
+    {
+      "id": "SEC-REPO-008",
+      "rule": "Configure client-specific outside services only through the repo-approved client administration boundary.",
+      "check": "Trace configuration ownership to the client identity and approved boundary named in repo instructions.",
+      "kind": "judgment",
+      "violation": "A client secret is placed in a shared application environment."
+    },
+    {
+      "id": "UI-REPO-027",
+      "rule": "Describe this product missing-input flow as explicit questions and confirmations, as required by the repo.",
+      "check": "Compare published claims with the actual question flow defined in repo acceptance criteria.",
+      "kind": "judgment",
+      "violation": "Copy promises automatic inference where this product asks the user."
+    },
+    {
+      "id": "TEST-REPO-005",
+      "rule": "Run the repo-defined multilingual, multi-turn staging acceptance suite and add owner-found bugs to it.",
+      "check": "Read acceptance suite evidence for the exact scenario matrix in repo instructions.",
+      "kind": "judgment",
+      "violation": "Only a single-language happy path is checked."
+    },
+    {
+      "id": "UI-001",
+      "rule": "Use plain punctuation without em dashes or emojis in user-visible text.",
+      "check": "Run check-practices for em-dash candidates; inspect visibility and emoji use.",
+      "kind": "mechanical",
+      "violation": "A button label contains an em dash.",
+      "sources": [
+        "Repo owner typography decision, record its date and approval here when adopting"
+      ]
+    }
+  ],
+  "token_globs": [
+    "src/design/tokens/**"
+  ],
+  "exclude": [
+    "vendor/**",
+    "generated/**"
+  ],
+  "hook": {
+    "command": "python3",
+    "args": [
+      "scripts/check-local-practices.py"
+    ]
+  },
+  "max_code_lines": 500,
+  "generated_globs": [
+    "src/api/generated/**"
+  ],
+  "past_generation_model_patterns": [
+    "retired-provider-v1"
+  ],
+  "violation_globs": {
+    "UI-001": [
+      "src/ui/**"
+    ],
+    "UI-002": [
+      "src/ui/**"
+    ]
+  }
+}

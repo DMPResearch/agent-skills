@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""Conservative source checks. JSON findings contain locations, never source text."""
+import argparse
+import fnmatch
+import json
+import pathlib
+import re
+import subprocess
+import sys
+
+import runpy
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SECRET = runpy.run_path(str(ROOT/'skills/merge-safe-prs/scripts/secret_patterns.py'))
+PRIVATE = SECRET['PATH_RE']
+LENGTH=runpy.run_path(str(ROOT/'scripts/practice_length.py'))
+CANDIDATES=runpy.run_path(str(ROOT/'scripts/practice_candidates.py'))
+CODE = {'.ts','.tsx','.js','.jsx','.mjs','.cjs','.css','.scss','.html','.vue','.svelte','.py','.swift','.kt','.java','.sh','.go','.rs','.c','.h','.cpp','.rb','.php','.cs'}
+UI = {'.tsx','.jsx','.css','.scss','.html','.vue','.svelte','.swift','.kt'}
+GENERATED = ['*.lock','*-lock.json','*.generated.*','*.gen.*','**/generated/**','generated/**','**/_generated/**','_generated/**','**/vendor/**','vendor/**','**/dist/**','dist/**']
+COLOR = re.compile(r'(?<![\w#])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b|\b(?:rgb|rgba|hsl|hsla|oklch|lab)\s*\([^)]*\)')
+STRING = re.compile(r'(["\x27`])(?:(?!\1).)*\1')
+
+class Redactor:
+    def sub(self, replacement, value):
+        return SECRET['redact'](value)
+TOKEN = Redactor()
+
+def git(root, *args):
+    return subprocess.run(['git','-C',str(root),*args], check=True, capture_output=True).stdout
+
+def diff_scope(root, base, target='.'):
+    base = git(root,'rev-parse','--verify','--end-of-options',base+'^{commit}').decode().strip()
+    names = git(root,'ls-files','-z','--',target).decode().split('\0')
+    safe = [name for name in names if name and not PRIVATE.search(name) and not (root/name).is_symlink() and not any(c in name for c in '\n\t')]
+    if not safe: return {}
+    raw = subprocess.run(['git','-C',str(root),'-c','core.quotePath=false','diff','--no-ext-diff','--no-textconv','--no-renames','--unified=0','--end-of-options',base,'--',*safe],check=True,capture_output=True).stdout.decode(errors='replace')
+    changed={}; name=None
+    for line in raw.splitlines():
+        if line.startswith('+++ b/'):
+            name=line[6:].rstrip('\t'); changed.setdefault(name,[])
+        elif line.startswith('@@ ') and name:
+            match=re.search(r' \+(\d+)(?:,(\d+))? @@',line)
+            if match: changed[name].append({'first':int(match[1]),'count':int(match[2] or '1')})
+    return {name:hunks for name,hunks in changed.items() if hunks}
+
+def finding(rule, file, line, severity, evidence, why):
+    return dict(rule_id=rule, file=file, line=line, severity=severity, evidence=evidence, why=why)
+
+def uncomment(line, block, hash_comments=False):
+    # Preserve quoted strings; remove line, block and HTML comments.
+    out=[]; i=0; quote=None
+    while i<len(line):
+        if block:
+            end=line.find(block,i)
+            if end<0: return ''.join(out),block
+            i=end+len(block);block=None;continue
+        char=line[i]
+        if quote:
+            out.append(char)
+            if char=='\\' and i+1<len(line): i+=1;out.append(line[i])
+            elif char==quote: quote=None
+            i+=1;continue
+        if char in ('"',"'",'`'): quote=char;out.append(char);i+=1;continue
+        if hash_comments and char=='#': break
+        if line.startswith('//',i): break
+        if line.startswith('/*',i): block='*/';i+=2;continue
+        if line.startswith('<!--',i): block='-->';i+=4;continue
+        out.append(char);i+=1
+    return ''.join(out),block
+
+def contextual_path(name):
+    return bool(re.search(r'(^|/)(tests?|fixtures|__tests__|docs?|documentation|design|\.changesets?|changesets?)/|[.-](test|spec|fixtures?)\.',name)) or pathlib.Path(name).suffix.lower() in {'.md','.rst','.txt','.jsonl'}
+
+
+def add_candidate(candidates,item):
+    group=candidates.setdefault(item['rule_id'],{'count':0,'first':[]});group['count']+=1
+    if len(group['first'])<20:
+        group['first'].append(re.sub(r'\s',' ',f"{item['file']}:{item['line']} {item['evidence']}")[:300])
+
+
+def summarize(violations, candidates):
+    rows=[]
+    for rule,group in sorted(candidates.items()):
+        rows.append(f"{rule}: {group['count']} candidates (first {len(group['first'])})")
+        rows.extend('  '+item for item in group['first'])
+    return '\n'.join(rows)
+
+
+def compact_summary(report):
+    counts={};first={}
+    for item in report['findings']:
+        rule=item['rule_id'];counts[rule]=counts.get(rule,0)+1
+        if len(first.setdefault(rule,[]))<20: first[rule].append(f"{item['file']}:{item['line']} {item['evidence']}")
+    return {'violation_count':report['violation_count'],'violation_counts':counts,'violation_first':first,'candidate_count':report['candidate_count'],'candidate_summary':report['candidate_summary'],'skipped_count':len(report['skipped']),'justified':report.get('justified',[]),'length_exemption_count':len(report.get('length_exemptions',[])),'analysis_warning_count':len(report.get('analysis_warnings',[])),'analysis_warnings':report.get('analysis_warnings',[])[:20]}
+
+
+def scan(root, mode='repo', base='HEAD', target='.', token_globs=(), exclude=(), config=None):
+    config=config or {}
+    tracked=git(root,'ls-files','-z','--',target).decode().split('\0')
+    changed=diff_scope(root,base,target) if mode=='diff' else {}
+    catalogue=json.loads((ROOT/'rules/catalogue.json').read_text())
+    patterns=catalogue['past_generation_model_patterns']+config.get('past_generation_model_patterns',[])
+    old_model=re.compile('|'.join('(?:'+p+')' for p in patterns),re.I)
+    length_policy=LENGTH['read_policy'](root,config)
+    limit=length_policy['max']
+    if not isinstance(limit,int) or limit<1: raise ValueError('Invalid source line limit')
+    opt_ins=config.get('violation_globs',{})
+    if not isinstance(opt_ins,dict) or any(not isinstance(globs,list) or not all(isinstance(g,str) for g in globs) for globs in opt_ins.values()): raise ValueError('violation_globs must map rule IDs to glob arrays')
+    registered={r['id'] for r in catalogue['rules']}|{r['id'] for r in config.get('rules',[])}
+    if set(opt_ins)-registered: raise ValueError('Promotions require a registered catalogue or repo rule')
+    findings,skipped,candidates=[],[],{}
+    justified=[];length_exemptions=[];analysis_warnings=[]
+    def emit(item,high=False):
+        opted=any(fnmatch.fnmatch(item['file'],g) for g in opt_ins.get(item['rule_id'],[]))
+        if high or opted: findings.append(item);return
+        add_candidate(candidates,item)
+    for name in tracked:
+        if not name or any(fnmatch.fnmatch(name,g) for g in exclude): continue
+        file=root/name
+        if PRIVATE.search(name) or file.is_symlink() or file.name in ['auth.json','auth.jsonl']:
+            skipped.append({'file':'[private path]' if PRIVATE.search(name) else name,'reason':'private path or symlink; not read'});continue
+        if mode=='diff' and name not in changed: continue
+        if not file.is_file(): continue
+        if file.stat().st_size>4_000_000:
+            skipped.append({'file':name,'reason':'over 4 MB; judgment review required'});continue
+        content=file.read_bytes()
+        if b'\0' in content: continue
+        try: lines=content.decode('utf8').splitlines()
+        except UnicodeDecodeError: continue
+        contextual=contextual_path(name)
+        for rule,line,message in CANDIDATES['smell_candidates'](name,'\n'.join(lines),config,analysis_warnings)+CANDIDATES['design_candidates'](name,'\n'.join(lines),config,token_globs):
+            if mode!='diff' or any(h['first']<=line<h['first']+h['count'] for h in changed.get(name,[])):
+                emit(finding(rule,name,line,'minor',message,'Source candidate only; judge behavior and the adopted repo policy.'))
+        generated=any(fnmatch.fnmatch(name,g) for g in GENERATED+config.get('generated_globs',[])) or any('@generated' in line.lower() or 'code generated' in line.lower() or 'automatically generated' in line.lower() for line in lines[:5])
+        data=LENGTH['data_module'](name,'\n'.join(lines),config,CANDIDATES['lexical']('\n'.join(lines))[0] if file.suffix in {'.ts','.js','.mjs','.cjs'} else None)
+        covered=file.suffix in length_policy.get('extensions',CODE)
+        exempt=any(pattern.search('/'+name) for pattern in length_policy['exempt'])
+        budget=length_policy['legacy'].get(name,limit)
+        if len(lines)>limit and covered:
+            if generated or data or exempt:
+                length_exemptions.append({'file':name,'lines':len(lines),'reason':'generated' if generated else 'config/data' if data else 'repo exemption'})
+            elif len(lines)<=budget:
+                length_exemptions.append({'file':name,'lines':len(lines),'reason':'repo legacy ratchet','budget':budget})
+            else:
+                allowed,error=LENGTH['justification'](name,'\n'.join(lines))
+                if allowed:
+                    allowed['reason']=TOKEN.sub('[REDACTED]',allowed['reason']);justified.append(allowed)
+                else:
+                    emit(finding('ENG-002',name,budget+1,'major',f'{len(lines)} lines; budget {budget}'+('; '+error if error else ''),'Split authored logic or document a substantive file-level reason.'),not contextual)
+        selected={n for h in changed.get(name,[]) for n in range(h['first'],h['first']+h['count'])}
+        block=None;clean_lines=[]
+        for line in lines:
+            clean,block=uncomment(line,block,file.suffix in {'.py','.sh','.rb','.toml','.yaml','.yml'})
+            clean_lines.append(clean)
+        strong=SECRET['strong_secret_lines']('\n'.join(lines))
+        for number,(line,clean) in enumerate(zip(lines,clean_lines),1):
+            if mode=='diff' and number not in selected: continue
+            if SECRET['line_hits'](line) or number in strong:
+                emit(finding('SEC-001',name,number,'blocker','Credential-shaped content; value redacted','Review the redacted location; only strong material fails by default.'),number in strong)
+            if old_model.search(line): emit(finding('ENG-001',name,number,'minor','Model identifier match','Check model choice and usage context.'))
+            if not (contextual and file.suffix=='.jsonl') and chr(8212) in line:
+                emit(finding('UI-001',name,number,'minor','Punctuation match','Apply only the repo-approved user-visible text policy.'))
+            if file.suffix in UI and COLOR.search(line) and not any(fnmatch.fnmatch(name,g) for g in token_globs):
+                emit(finding('UI-002',name,number,'minor','Raw colour match','Compare with the repo token policy.'))
+    return findings,skipped,changed,candidates,justified,length_exemptions,analysis_warnings
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--repo',default='.')
+    p.add_argument('--mode',choices=['repo','diff'],default='repo')
+    p.add_argument('--base',default='HEAD',help='Trusted Git base, e.g. PR merge-base SHA')
+    p.add_argument('--target',default='.')
+    p.add_argument('--extension',help='Trusted repo extension JSON; never auto-executes hooks')
+    p.add_argument('--token-glob',action='append',default=[])
+    p.add_argument('--exclude',action='append',default=[])
+    p.add_argument('--hook'); p.add_argument('--hook-arg',action='append',default=[])
+    p.add_argument('--allow-hook',action='store_true')
+    p.add_argument('--timeout',type=int,default=60)
+    a=p.parse_args()
+    root=pathlib.Path(a.repo).resolve()
+    config=json.loads(pathlib.Path(a.extension).read_text()) if a.extension else {}
+    if config and config.get('version') != 1: raise ValueError('Unsupported extension version')
+    target=(root/a.target).resolve()
+    if not target.is_relative_to(root): raise ValueError('Target must be inside repo')
+    tokens=['**/tokens.*','tokens.*','**/tokens/**',*config.get('token_globs',[]),*a.token_glob]
+    findings, skipped, changed, candidates, justified, length_exemptions, analysis_warnings=scan(root,a.mode,a.base,str(target.relative_to(root)),tokens,[*config.get('exclude',[]),*a.exclude],config)
+    hook=a.hook or config.get('hook',{}).get('command')
+    hook_args=a.hook_arg if a.hook else config.get('hook',{}).get('args',[])
+    status='not configured'
+    if hook:
+        if not a.allow_hook: raise ValueError('Repo hook requires --allow-hook after reviewing its command')
+        result=subprocess.run([hook,*hook_args],cwd=root,stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=a.timeout)
+        if result.returncode: raise ValueError('Repo hook failed; output withheld because it may contain secrets')
+        extra=json.loads(result.stdout)
+        if not isinstance(extra,list): raise ValueError('Repo hook must return a JSON finding array')
+        for item in extra:
+            if not isinstance(item,dict) or set(item) != {'rule_id','file','line','severity','evidence','why'}: raise ValueError('Invalid hook finding')
+            if item['severity'] not in ['blocker','major','minor'] or not isinstance(item['line'],int) or item['line']<1: raise ValueError('Invalid hook severity or line')
+            # Never relay token-like content, even from a trusted hook.
+            clean_item={k:TOKEN.sub('[REDACTED]',v) if isinstance(v,str) else v for k,v in item.items()}
+            if any(fnmatch.fnmatch(item['file'],g) for g in config.get('violation_globs',{}).get(item['rule_id'],[])): findings.append(clean_item)
+            else: add_candidate(candidates,clean_item)
+        status='passed'
+    # Keep the rendered candidate section below 200 lines as groups grow.
+    while len(json.dumps(candidates,indent=2).splitlines())>=200 and any(g['first'] for g in candidates.values()):
+        largest=max(candidates.values(),key=lambda g:len(g['first']))
+        largest['first'].pop()
+    report={'version':3,'mode':a.mode,'base':a.base if a.mode=='diff' else None,'violation_count':len(findings),'candidate_count':sum(group['count'] for group in candidates.values()),'findings':findings,'analysis_warnings':analysis_warnings,'justified':justified,'length_exemptions':length_exemptions,'candidate_summary':candidates,'candidate_text':summarize(findings,candidates),'changed_lines':changed,'excluded':[*config.get('exclude',[]),*a.exclude],'skipped':skipped,'hook_status':status,'limits':'Strong secrets fail on raw text anywhere. Authored-code length honors repo budgets, data exemptions and reviewed justifications. Other matches are bounded candidates unless explicitly opted in by rule/glob.'}
+    print(json.dumps(report,indent=2))
+    return 1 if findings else 0
+
+if __name__=='__main__':
+    try: sys.exit(main())
+    except (ValueError,OSError,subprocess.SubprocessError,json.JSONDecodeError):
+        print('Practice check incomplete: invalid configuration, Git failure, unreadable file or hook failure. No pass recorded.',file=sys.stderr)
+        sys.exit(2)
