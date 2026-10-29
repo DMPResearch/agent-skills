@@ -1,0 +1,26 @@
+[
+  {
+    "query": "Implement a minutes formatter in utils.py with behavioural tests.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fix the rounding bug in the invoice calculation and prove the regression.",
+    "should_trigger": true
+  },
+  {
+    "query": "Build the approved form using the existing shared contract.",
+    "should_trigger": true
+  },
+  {
+    "query": "Explain the purpose of utils.py; do not edit anything.",
+    "should_trigger": false
+  },
+  {
+    "query": "Read this diff and report risks only.",
+    "should_trigger": false
+  },
+  {
+    "query": "What does DRY mean?",
+    "should_trigger": false
+  }
+]

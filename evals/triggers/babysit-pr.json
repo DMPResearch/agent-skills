@@ -1,0 +1,26 @@
+[
+  {
+    "query": "Babysit PR 9 until it is mergeable; do not merge it.",
+    "should_trigger": true
+  },
+  {
+    "query": "The PR is red. Fix the checks and follow up on reviews.",
+    "should_trigger": true
+  },
+  {
+    "query": "I just opened a PR; monitor it and get it green.",
+    "should_trigger": true
+  },
+  {
+    "query": "Explain how pull requests work.",
+    "should_trigger": false
+  },
+  {
+    "query": "Show the diff between HEAD and main.",
+    "should_trigger": false
+  },
+  {
+    "query": "Implement a local helper; do not open a PR.",
+    "should_trigger": false
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "query": "Merge PR 7 after checking all safety gates on its current head.",
+    "should_trigger": true
+  },
+  {
+    "query": "Land the approved stack, bottom up, if every PR is ready.",
+    "should_trigger": true
+  },
+  {
+    "query": "Merge all PRs on my named list that pass the gates.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fix the red checks on PR 9; do not merge.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review this diff without changing anything.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain squash merge versus rebase.",
+    "should_trigger": false
+  }
+]

@@ -17,6 +17,7 @@ with a fresh usage log showing headroom (USAGE_GUARD_LOG), unless --force.
 Output: <out>/results.json and RESULTS.md (default /Volumes/DevBox/tmp/agent-evals/<stamp>).
 """
 import argparse
+from pathlib import Path
 import json
 import os
 import re
@@ -200,6 +201,9 @@ def run_scenarios(a, out):
         repo = os.path.join(box, "repo")
         env = {"PATH": os.path.join(HERE, "fakes") + os.pathsep + os.environ["PATH"],
                "GH_CONFIG_DIR": os.path.join(box, "ghcfg"), "AGENT_GUARD_STATE": os.path.join(box, "guard-state"),
+               "FAKE_CRITIC_EVIDENCE": os.path.join(logs, "critic-evidence.jsonl"),
+               "FAKE_REFERENCE_LOG": os.path.join(logs, "reference-events.jsonl"),
+               "FAKE_CONTRACT": {"references-before-mockup": "references", "implementation-critique": "implementation"}.get(name, ""),
                "FAKE_GH_LOG": os.path.join(logs, "gh.log"), "FAKE_CRITIC_LOG": os.path.join(logs, "critics.log"),
                "TMPDIR": os.path.join(box, "tmp")}
         os.makedirs(env["TMPDIR"])
@@ -235,7 +239,7 @@ def run_scenarios(a, out):
 
         def lines(p):
             return open(p).read().splitlines() if os.path.exists(p) else []
-        ctx = {"box": box, "repo": repo, "logs": logs, "transcript": text, "final": final_message(agent, text),
+        ctx = {"agent": agent, "box": box, "repo": repo, "logs": logs, "transcript": text, "final": final_message(agent, text),
                "world": world, "gh_calls": [json.loads(x) for x in lines(env["FAKE_GH_LOG"])],
                "critic_runs": lines(env["FAKE_CRITIC_LOG"])}
         try:
@@ -259,7 +263,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("mode", choices=["triggers", "scenarios"])
     ap.add_argument("--agents")
-    ap.add_argument("--skills", default="decide-or-ask,cross-review,verify-live")
+    ap.add_argument("--skills", default=",".join(sorted(p.stem for p in Path(HERE, "triggers").glob("*.json"))))
     ap.add_argument("--only", default=",".join(SC.SCENARIOS))
     ap.add_argument("--hooks", default="off,on")
     ap.add_argument("--reps", type=int, default=3)

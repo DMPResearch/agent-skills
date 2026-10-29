@@ -1,0 +1,26 @@
+[
+  {
+    "query": "Audit this repository against the universal practice catalogue; report only.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run a read-only practice audit of this PR diff using our extension.",
+    "should_trigger": true
+  },
+  {
+    "query": "Check src/ against the shared engineering rules without fixing findings.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fix the failing unit test in utils.py.",
+    "should_trigger": false
+  },
+  {
+    "query": "Research design references for a new dashboard.",
+    "should_trigger": false
+  },
+  {
+    "query": "Merge PR 7 after its existing checks pass.",
+    "should_trigger": false
+  }
+]

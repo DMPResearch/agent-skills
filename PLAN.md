@@ -141,3 +141,30 @@ When preserving scanner coverage, remove only demonstrated false positives and r
 - Final read-only scans: Ereno 259ca8aa and Platform db8c650 each have zero default violations. Candidate summaries are 157/199 and 94/120 text/JSON lines. Ereno has two explicit host-AST syntax warnings; all positives/classification corrections are in RESULTS.md. Repo policy exemptions and ratchets remain untouched.
 - Final checks: 93 tooling, 46 shared scanner, 22 guard, 38 review runner and four Node tests pass; verify-live capture suite passes with the requested Playwright installation. Three skill validations and whitespace checks pass. Parent retains independent review; no nested critic or self-approval was substituted.
 - Both unchanged-main and new scanners accept the complete proposed net diff without allowances. Preserve an external local bundle and staged patch, then squash to one child of main and verify commit history, outgoing history and diff again with both scanners before handoff. No push.
+
+## Hooks and evals worker, 2026-10-29
+
+1. Add trigger cases for all eight skills and behavioural scenarios for reference ordering and implementation critique/finding resolution. Prove graders reject missing, late and self-authored evidence with local tests; preserve the practice calibration.
+2. Test a shared opt-in Git pre-push practice gate against real local remotes before implementation. Reuse the repo-side snapshot/range logic, trusted installed checker and extension; prove tags, deletes, dirty checkout and other-branch pushes.
+3. Document why UI completion cannot reliably be blocked from Stop events. Keep existing reminders, no new heuristic blocker.
+4. Run every local suite with full output in the requested DevBox log, plus redacting secret scan; record exact results and unrun live agent evals. Commit locally for the parent Claude critic, never push or nest reviewers.
+
+The user supplied this implementation brief directly; no further plan approval is needed. Worker handoff does not pass the independent review gate.
+
+Hook green attempts stopped after two setup failures: generated installer shell quoting was invalid, then installation still failed. Re-plan: inspect one installer result directly before any suite rerun; fix setup independently, then resume behavioural verification. These are not additional behavioural red proofs.
+
+### Hook/eval verification notes
+
+- Intended hook red: five behavioural failures in `/Volumes/DevBox/tmp/agent-skills-hooks-red.txt`; the pushes passed unchecked and no hook backup/incomplete notice existed. Initial green setup failures were repaired before the seven-case pass; expanded fourteen-case suite also passes.
+- Live Codex: all six new behaviour runs pass, hooks off/on, including seeded critic findings followed by a current independent approval. Captures and critics are test fixtures, not a visual-quality verdict.
+- Full suite exposed an existing baseline regression test that copied main's scanner without its now-required sibling recognizer. Preserve both files from main in that temporary fixture; the six focused tests pass. No scanner detection was weakened.
+- UI completion blocker rejected because portable Stop/SessionEnd payloads cannot establish build-bound verification; rationale in docs/hooks-considered.md. Existing bounded reminder remains.
+
+### Worker handoff
+
+- Added five missing trigger sets; the runner now discovers all eight by default. Live Codex: all new sets pass; two pre-existing decide-or-ask prompts miss. All twenty behaviour runs pass (ten scenarios, hooks off/on), including the unchanged seven original scenarios. Reports and raw results are in evals/RESULTS.md and its named DevBox directories.
+- Final local checks: 36 hook tests, five eval/fixture tests, 93 tooling/calibration tests, 38 review-runner tests, 46 merge/scanner tests, four reference-capture tests and the real Chromium capture self-test pass. Full output is `/Volumes/DevBox/tmp/agent-skills-hooks-evals-tests.txt`. The earlier failed full output is preserved as `agent-skills-hooks-evals-tests-first.txt`.
+- Installation is opt-in per repo. Git's own ref stream covers every provider without a shell parser or agent-event dependence. Existing executable hooks are backed up/chained; non-executable hooks stay ignored, demonstrated by a failing regression before the fix. Incomplete checks warn and allow; only violations block. No remote fetch, model call, repo command or CI run is part of the gate.
+- No new Stop/SessionEnd blocker, dependency, product UI change, push or deployment. No Fable, Claude/Cursor live eval rerun or real-model practice calibration rerun. As an implementation worker, I leave independent critique to the parent Claude critic; this local commit is a review handoff, not review approval.
+
+- Final robustness regressions: malformed policy shapes must warn/allow rather than crash/block; new branches use the remote's recorded default (tested on master) instead of assuming main. Each failed before its fix. The final root hook run includes all fourteen new cases alongside the existing twenty-two.

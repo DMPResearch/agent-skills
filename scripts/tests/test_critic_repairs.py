@@ -15,6 +15,10 @@ class CriticRepairs(unittest.TestCase):
         source=subprocess.check_output(['git','show','main:skills/merge-safe-prs/scripts/scan-secrets.py'],cwd=ROOT,text=True)
         with tempfile.TemporaryDirectory() as directory:
             path=pathlib.Path(directory)/'baseline.py';path.write_text(source)
+            # Main now loads its recognizer from a sibling module. Preserve
+            # that baseline too, rather than accidentally testing this branch.
+            patterns=subprocess.check_output(['git','show','main:skills/merge-safe-prs/scripts/secret_patterns.py'],cwd=ROOT,text=True)
+            path.with_name('secret_patterns.py').write_text(patterns)
             main=runpy.run_path(str(path))
         value=''.join(['Ab9cDe7FgHi3JkLm5NoPq8RsTu2VwXyZ'])
         quoted=json.dumps(value)

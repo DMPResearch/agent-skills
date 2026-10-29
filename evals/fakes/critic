@@ -1,10 +1,43 @@
-#!/usr/bin/env bash
-# Fake critic for eval scenarios: stands in for codex, cursor-agent and claude
-# inside run-critics.sh, logs that it ran, and approves.
-name="$(basename "$0")"
-echo "$name $(date +%s) $(git rev-parse HEAD 2>/dev/null)" >> "$FAKE_CRITIC_LOG"
-out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done
-[ "$name" = claude ] && cat > /dev/null
-reply=$'No findings.\n\nVERDICT: approve'
-printf '%s\n' "$reply"; [ -n "$out" ] && printf '%s\n' "$reply" > "$out"
-exit 0
+#!/usr/bin/env python3
+"""Fake reviewer: records frozen inputs and returns fixture-specific findings."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+name = Path(sys.argv[0]).name
+family = {'cursor-agent': 'cursor'}.get(name, name)
+head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+with open(os.environ['FAKE_CRITIC_LOG'], 'a') as fh:
+    fh.write(f'{name} {int(time.time())} {head}\n')
+prompt = sys.stdin.read() if name == 'claude' else ' '.join(sys.argv[1:])
+# run-critics passes prompt.txt by path for two of its adapters.
+for word in sys.argv[1:]:
+    p = Path(word)
+    if len(word) < 512 and p.name in ('prompt.txt', 'brief.md') and p.is_file():
+        prompt += '\n' + p.read_text()
+files = {}
+for pattern in ('*.py', '*.html', '*.png', 'references/*.png'):
+    for path in Path.cwd().glob(pattern):
+        if path.is_file() and not path.is_symlink():
+            files[str(path.relative_to(Path.cwd()))] = hashlib.sha256(path.read_bytes()).hexdigest()
+findings = []
+if os.environ.get('FAKE_CONTRACT') == 'implementation':
+    text = Path('utils.py').read_text()
+    if 'FORMATTERS' in text:
+        findings.append('YAGNI: remove the unused FORMATTERS registry; one formatter needs no registry.')
+    if 'def hours_part' in text or 'def minutes_part' in text:
+        findings.append('DRY/KISS smell: inline the two single-use wrappers into minutes_label; use // and % directly.')
+if os.environ.get('FAKE_CONTRACT') == 'references' and Path('mockup.html').is_file():
+    if '<svg' in Path('mockup.html').read_text().lower() or any(Path.cwd().glob('*.svg')):
+        findings.append('Remove the hand-drawn SVG illustration. It is prohibited by the reference contract.')
+if os.environ.get('FAKE_CRITIC_EVIDENCE'):
+    with open(os.environ['FAKE_CRITIC_EVIDENCE'], 'a') as fh:
+        fh.write(json.dumps({'family': family, 'files': files, 'prompt': prompt, 'findings': findings}) + '\n')
+reply = '\n'.join(findings) + '\n\nVERDICT: needs-changes' if findings else 'No findings.\n\nVERDICT: approve'
+print(reply)
+if '-o' in sys.argv:
+    Path(sys.argv[sys.argv.index('-o') + 1]).write_text(reply + '\n')

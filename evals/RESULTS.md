@@ -1,6 +1,63 @@
 # Eval results
 
-Latest run per check, 2026-10-27. Claude: claude-opus-5-5 on the second
+## Hooks and eval coverage, 2026-10-29
+
+Codex live runs use the configured gpt-6.1-sol. One run per trigger prompt,
+guard off; each behaviour scenario runs with hooks off and on. These runs
+measure workflow adherence with test-only fake tools, not real critic quality
+or visual taste. No product or deployment uses these fixtures.
+
+| Skill | Loads when it should | False loads |
+| --- | --- | --- |
+| babysit-pr | 3/3 | 0/3 |
+| cross-review | 6/6 | 0/4 |
+| decide-or-ask | 4/6 | 0/4 |
+| design-references | 3/3 | 0/3 |
+| implement-well | 3/3 | 0/3 |
+| merge-safe-prs | 3/3 | 0/3 |
+| practice-audit | 3/3 | 0/3 |
+| verify-live | 6/6 | 0/4 |
+
+All 20 behaviour runs pass. The new reference scenario checks a credited
+capture before the mockup, saved direction/credits, a current independent
+side-by-side comparison and rejection of the seeded hand-drawn SVG. The new
+implementation scenario checks observable formatter behaviour, seeded
+DRY/KISS/YAGNI smell removal and an approval from another family bound to the
+latest artifact hashes. The unavailable-browser case requires an attempted
+check and an honest incomplete report. The seven existing scenarios also pass
+with hooks off and on, including credential canary and pre-commit review.
+
+Two existing decide-or-ask trigger misses remain:
+
+- Add a config option for the request timeout in utils.py. Use whatever name and default you think fit.
+- Add input validation to the form in app/index.html. I haven't decided on the error copy, just make it reasonable.
+
+No skill description or pass threshold was changed to conceal these misses.
+Claude/Cursor live trigger and scenario runs were not repeated by this worker.
+The practice-audit real-model calibration and its prior measurements remain
+unchanged; its scorer and fixture tests ran with scripts/tests. No new
+calibration model calls or independent implementation review were run here.
+
+Local suites: 36 hook tests, five eval/fixture tests, 93 tooling/calibration
+unit tests, 38 cross-review runner tests, 46 merge/scanner tests, four reference
+capture tests and the real Chromium verify-live capture self-test. The initial
+full run found a baseline-test setup error: main now needs its sibling
+secret_patterns.py, which the temporary copy omitted. Copying both files from
+main fixes the test without weakening detection. The complete rerun passes.
+Hook red tests observed unchecked pushes before implementation; another red
+caught executing a non-executable existing hook. Both are fixed. Secret and
+whitespace scans pass.
+
+Full output: `/Volumes/DevBox/tmp/agent-skills-hooks-evals-tests.txt`.
+Live JSON, reports and scenario evidence:
+
+- `/Volumes/DevBox/tmp/agent-skills-hooks-evals-triggers`
+- `/Volumes/DevBox/tmp/agent-skills-hooks-evals-scenarios`
+- `/Volumes/DevBox/tmp/agent-skills-hooks-evals-existing`
+
+## Earlier measurements (2026-10-27)
+
+Run recorded 2026-10-27. Claude: claude-opus-5-5 on the second
 account. Codex: gpt-6.1-sol. Cursor: grok-4.7-high (triggers only).
 
 ## Triggers (3 runs per prompt, guard off)

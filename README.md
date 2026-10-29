@@ -81,12 +81,41 @@ they assume an honest agent making mistakes. Keep the rules in your briefs
 anyway. Known gaps: plain `ssh` still sees your keys; Cursor is covered only
 where its CLI sends hook events; Codex needs the one-time trust above.
 
+### Opt-in practice gate
+
+For a repository that has adopted a practice extension, install a Git pre-push
+hook using a reviewed policy path:
+
+```sh
+python3 -I hooks/install_hooks.py --practice-repo /path/to/repo --extension /path/to/repo/practice-extension.json
+```
+
+This does not change global agent configuration. The Git hook covers Claude
+Code, Codex, Cursor and ordinary shell pushes. It backs up an existing hook
+and chains it with the complete ref stream. Reinstallation is idempotent.
+The shared checker runs in fast diff mode on the pushed branch snapshot,
+including other-branch pushes. Tags and deletions are skipped. Only violations
+block; candidates allow, and errors visibly report incomplete without blocking.
+No repo extension command runs. See [the hook decisions](docs/hooks-considered.md)
+for base selection, trusted policy and the rejected UI completion blocker.
+To uninstall, restore `pre-push.agent-skills-original` beside the installed
+hook (or remove the hook if none existed), then run
+`git config --local --unset agentSkills.practiceExtension`.
+
 ## Evals
 
 ```sh
 python3 evals/run_evals.py triggers     # does each skill load when it should
 python3 evals/run_evals.py scenarios    # does the agent behave right, hooks off then on
+python3 -I -m unittest discover -s evals/tests  # graders and fake-tool contracts
 ```
+
+All eight skills have positive and negative trigger cases; the default selects
+every trigger file. Reference and implementation scenarios log capture ordering,
+credits, critic inputs and artifact hashes. They reject stale or same-family
+reviews, unresolved seeded smells and hand-drawn SVG. Their fake captures test
+workflow only, not design quality. practice-audit retains its separate real-model
+calibration. verify-unavailable tests that failed browser checks are disclosed.
 
 Trigger prompts live in `evals/triggers/<skill>.json` (skill-creator's
 format). Scenarios (`evals/scenarios.py`) run real agents in throwaway repos
@@ -129,8 +158,8 @@ python3 -I -m unittest discover -s skills/merge-safe-prs/scripts/tests
 PW_DIR=<folder where Playwright resolves> bash skills/verify-live/scripts/tests/test-capture.sh
 ```
 
-The test files contain made-up tokens on purpose, to prove the secret
-scanner catches them. None of them is a real credential.
+Tests construct synthetic credential values at runtime to exercise redaction
+and detection without committing complete token-shaped literals.
 
 ## Practice catalogue and audits
 

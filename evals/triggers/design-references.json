@@ -1,0 +1,26 @@
+[
+  {
+    "query": "Mock up a mobile signup screen for this product. Collect design references first.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before prototyping our dashboard, research real reference screens and compare directions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Design a new app icon and show the reference identities that informed it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Explain what this CSS selector does.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fix the parser in utils.py without changing any UI.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarize our existing design tokens; do not design anything.",
+    "should_trigger": false
+  }
+]
