@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {readFileSync,mkdirSync,existsSync,writeFileSync} from 'node:fs';
+import {readFileSync,mkdirSync,existsSync,writeFileSync,statSync} from 'node:fs';
 import {resolve,dirname,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createRequire} from 'node:module';
@@ -7,7 +7,8 @@ import {createHash} from 'node:crypto';
 import {spawn,execFileSync} from 'node:child_process';
 import {validate,selectScope,matrix,redact} from './contract.mjs';
 import {runCell} from './cell.mjs';
-import {command,contactSheet,critique,save} from './report.mjs';
+import {importCrawl} from './external.mjs';
+import {command,critique,save} from './report.mjs';
 
 const args=process.argv.slice(2),option=name=>args[args.indexOf(name)+1];
 if(!args.includes('--config')){console.error('Usage: run.mjs --config /repo/qa-browser.json --out /evidence [--pr-base REF]');process.exit(2);}
@@ -42,6 +43,7 @@ try{
  }
  const scope=selectScope(config.flows,graph,config.globals);
  if(!scope.length)report.gaps.push('no flows selected; verify change ownership');
+ if(config.standingCrawl?.useResults&&scope.some(s=>s.flow.states.length!==1))throw Error('external capture requires one declared state per screen key; expose each state as its own flow');
  report.scope=scope.map(s=>({id:s.flow.id,tier:s.tier,reason:s.reason}));
  const toolchain=resolve(root,config.playwrightPath||'package.json'),req=createRequire(toolchain);
  for(const name of ['playwright','@playwright/test']){try{browserModule=req(name);break;}catch{}}
@@ -72,11 +74,21 @@ try{
  }else report.gaps.push('production build identity and matching HTML/JS/CSS not verified');
  if(config.standingCrawl){
   const s=config.standingCrawl;
-  const result=await command(s.command[0],s.command.slice(1),{cwd:root,timeout:Math.max(1,deadline-Date.now()),env:{...process.env,...s.env}});
+  const captureStarted=Date.now();
+  const result=await command(s.command[0],s.command.slice(1),{cwd:root,timeout:Math.max(1,deadline-Date.now()),env:{...process.env,...s.env,QA_BROWSER_SCOPE:JSON.stringify(scope.map(s=>({screen:s.flow.id,state:typeof s.flow.states[0]==='string'?s.flow.states[0]:s.flow.states[0].id,matrix:matrix(s.tier)})))}});
   writeFileSync(join(out,'standing-crawl.log'),redact(result.stdout+'\n'+result.stderr));
   report.standing={exit:result.code,report:s.report};
-  if(result.code!==0)report.gaps.push('standing crawl failed or incomplete; see external report');
+  if(s.useResults){
+   const source=resolve(root,s.report);
+   if(![0,1].includes(result.code))throw Error('capture provider failed or timed out; no prior report reused');
+   if(!existsSync(source)||statSync(source).mtimeMs<captureStarted)throw Error('capture report is missing or stale; prior captures cannot satisfy this run');
+  }else if(result.code!==0)report.gaps.push('standing crawl failed or incomplete; see external report');
  }
+ if(config.standingCrawl?.useResults){
+  const source=json(config.standingCrawl.report);
+  const expected=scope.flatMap(s=>matrix(s.tier).map(c=>({...c,screen:s.flow.id,state:typeof s.flow.states[0]==='string'?s.flow.states[0]:s.flow.states[0].id})));
+  const imported=importCrawl(source,{expected});report.cells=imported.cells;report.expectedCells=imported.expectedCells;report.runFailures=imported.runFailures;report.runtimeDiagnostics=imported.runtimeDiagnostics;report.gaps.push(...imported.gaps);
+ }else{
  if(adapter?.setup)await adapter.setup({config,root});
  const tasks=scope.flatMap(s=>matrix(s.tier).flatMap(cell=>(s.tier==='global'?s.flow.states.slice(0,1):s.flow.states).map(state=>({...s,...cell,state:typeof state==='string'?{id:state}:state}))));
  report.expectedCells=tasks.length;
@@ -85,10 +97,13 @@ try{
   while(next<tasks.length&&!stopping&&Date.now()<deadline){const t=tasks[next++];await runCell(t,{config,report,out,browserModule,browsers,launches,adapter});}
  }));
  if(report.cells.length!==tasks.length)report.gaps.push(`unrun cells: ${tasks.length-report.cells.length}`);
+ }
+ clearTimeout(timer);
  const b=await browserModule.chromium.launch();
- try{report.sheets=await contactSheet(report.cells,out,b);}finally{await b.close();}
- if(!stopping&&Date.now()<deadline)await critique(report,{...config,criticTimeoutMs:Math.min(config.criticTimeoutMs||300000,deadline-Date.now())},out,root);
- else report.gaps.push('critic unrun: run cap exhausted');
+ try{
+  await critique(report,config,out,root,b);
+ }finally{await b.close();}
+
 }catch(error){report.gaps.push(redact(error.message));}
 finally{
  clearTimeout(timer);process.removeListener('SIGTERM',stop);process.removeListener('SIGINT',stop);

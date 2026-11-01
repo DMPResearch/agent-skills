@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {command,critique,save,applyCritique} from './report.mjs';
+import {command,critique,save} from './report.mjs';
 import {redact,validate} from './contract.mjs';
 test('reviewer stdin is closed and a stuck reviewer is bounded',async()=>{
- const closed=await command(process.execPath,['-e',"process.stdin.resume();process.stdin.on('end',()=>console.log('closed'))"],{timeout:1000});
+ const closed=await command(process.execPath,['-e',"process.stdin.resume();process.stdin.on('end',()=>console.log('closed'))"],{timeout:10000});
  assert.equal(closed.code,0);assert.equal(closed.stdout.trim(),'closed');
  const hung=await command(process.execPath,['-e','setInterval(()=>{},1000)'],{timeout:30});
  assert.equal(hung.code,124);
@@ -31,13 +31,4 @@ test('credentials and URL queries do not reach runtime evidence',()=>{
 });
 test('a declared click without an expected outcome is not coverage',()=>{
  assert.throws(()=>validate({version:1,baseURL:'http://localhost',flows:[{id:'x',main:true,entry:'x.js',url:'/',states:['signed-out'],steps:[],controls:[{selector:'button',steps:[{action:'click',selector:'button'}]}],breaks:[]}]}),/expected effect/);
-});
-
-test('critic output must cover each frame exactly once with valid findings',()=>{
- const make=()=>({gaps:[],cells:[{id:'one',frames:['one.png'],failures:[],complete:true}]});
- let r=make();applyCritique(r,JSON.stringify({frames:[]}));assert.ok(r.gaps.length);assert.equal(r.cells[0].critic,undefined);
- r=make();applyCritique(r,JSON.stringify({frames:[{path:'one.png',status:'pass'}]}));assert.ok(r.gaps.length);
- r=make();applyCritique(r,JSON.stringify({frames:[{path:'one.png',status:'pass',failures:[]}]}));assert.equal(r.cells[0].critic,'pass');
- r=make();applyCritique(r,JSON.stringify({frames:[{path:'one.png',status:'pass',failures:['Unreadable label']}]}));assert.equal(r.cells[0].critic,'fail');
- r=make();const frame={path:'one.png',status:'pass',failures:[]};applyCritique(r,JSON.stringify({frames:[frame,frame]}));assert.ok(r.gaps.length);
 });

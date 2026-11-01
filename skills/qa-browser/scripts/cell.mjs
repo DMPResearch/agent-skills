@@ -60,10 +60,10 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   const queue=[[]],seen=new Set();let states=0;const reachedForms=new Set(),reachedInputs=new Set(),reachedControls=new Set();
   while(queue.length){
    const path=queue.shift();await reset();for(const c of path)await steps(page,c.steps,surface);
-   const controls=await inventory(surface);
+   const controls=await inventory(surface,flow.controls.map(c=>c.selector));
    for(const target of await surface.locator('form').evaluateAll(es=>es.map((e,i)=>e.id?'#'+e.id:'form:nth-of-type('+(i+1)+')')))reachedForms.add(target);
    for(const item of controls.filter(c=>['input','textarea','select'].includes(c.tag)))reachedInputs.add(item.id?'#'+item.id:item.name);
-   const fingerprint=await surface.locator('body').evaluate(e=>JSON.stringify({text:e.innerText,controls:[...e.querySelectorAll('input,select,textarea')].map(x=>[x.id,x.type,x.checked,x.value]),dialogs:[...e.querySelectorAll('[role=dialog],dialog[open]')].map(x=>x.innerText)}));
+   const fingerprint=await surface.locator('body').evaluate(e=>JSON.stringify({text:e.innerText,controls:[...e.querySelectorAll('input,select,textarea,button,[role=button],[role=radio],[role=switch],a[href],summary')].map(x=>[x.id,x.type,x.checked,x.value,x.disabled,x.hidden,...['aria-pressed','aria-checked','aria-selected','aria-expanded','aria-disabled'].map(a=>x.getAttribute(a))]),dialogs:[...e.querySelectorAll('[role=dialog],dialog[open]')].map(x=>x.innerText)}));
    const key=createHash('sha256').update(page.url()+fingerprint).digest('hex');
    if(seen.has(key))continue;seen.add(key);states++;
    if(states>(config.maxStates||100)){cell.gaps.push('state traversal limit reached');break;}
@@ -71,7 +71,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    for(const item of controls){
     const loc=await matchingControl(surface,item,flow.controls);
     if(!loc&&['input','textarea','select'].includes(item.tag)&&flow.breaks.some(b=>b.target===(item.id?'#'+item.id:item.name))){cell.controls.push({tag:item.tag,status:'covered-by-break-contract'});continue;}
-    if(item.disabled){cell.controls.push({tag:item.tag,status:'disabled'});continue;}
+    if(item.disabled){cell.controls.push({selector:loc?.selector,tag:item.tag,status:'disabled'});continue;}
     if(loc){
      reachedControls.add(loc.selector);
      const edgeKey=key+loc.selector;
@@ -90,6 +90,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    }
   }
   // Every form/control needs explicit expected outcomes. Never infer a valid service result.
+  for(const control of flow.controls)if(!cell.controls.some(c=>c.selector===control.selector))cell.gaps.push('declared control not exercised: '+redact(control.selector));
   const required=['empty','invalid','double-submit','refresh','back-forward','signed-out','signed-in'];
   for(const kind of required)if(!flow.breaks.some(b=>b.kind===kind))cell.gaps.push('missing break contract: '+kind);
   for(const target of new Set([...reachedForms,...reachedInputs]))for(const kind of ['empty','invalid','double-submit','refresh'])if(!flow.breaks.some(b=>b.kind===kind&&b.target===target))cell.gaps.push('missing '+kind+' expected outcome for '+redact(target));

@@ -85,8 +85,8 @@ export async function inspect(page){
  return [...new Set(failures)];
 }
 
-export async function inventory(page){
- return page.locator('button,a[href],input,textarea,select,[role=button],[role=radio],[role=switch],summary').evaluateAll(els=>els.filter(e=>{
+export async function inventory(page,declaredSelectors=[]){
+ return page.locator(['button,a[href],input,textarea,select,[role=button],[role=radio],[role=switch],summary',...declaredSelectors].join(',')).evaluateAll(els=>els.filter(e=>{
   const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width&&r.height&&s.visibility!=='hidden'&&s.display!=='none'&&!e.closest('[inert]');
  }).map(e=>{let node=e,path='';while(node&&node!==document.body){const part=node.id?'#'+CSS.escape(node.id):node.tagName.toLowerCase()+':nth-of-type('+([...node.parentElement.children].filter(x=>x.tagName===node.tagName).indexOf(node)+1)+')';path=part+(path?' > '+path:'');if(node.id)break;node=node.parentElement;}return {path,tag:e.tagName.toLowerCase(),id:e.id,role:e.getAttribute('role'),name:e.getAttribute('aria-label')||e.getAttribute('name')||e.textContent.trim().slice(0,80),href:e.getAttribute('href'),disabled:e.matches(':disabled,[aria-disabled=true]')};}));
 }

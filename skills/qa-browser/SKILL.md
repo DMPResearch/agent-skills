@@ -32,7 +32,7 @@ server. A configured start command owns only the process it starts.
 3. Full runs cover 390x660, 412x620, 390x844, 820x1180 and 1440x900 in light/dark
    and Chromium/WebKit. Direct PR screens and uncertain ownership use all 12
    verify-live sizes; global-only main-screen samples use the spec's four sizes.
-   Two workers, 60-second cells, 10-second actions, 30-minute total cap. Unrun
+   Two workers, 60-second cells, 10-second actions, 30-minute capture cap. Unrun
    cells stay incomplete; never shrink the matrix to make a deadline.
 4. Traverse declared controls and reachable states, checking every actual effect
    against the flows contract. Undeclared controls/routes are coverage gaps,
@@ -41,17 +41,19 @@ server. A configured start command owns only the process it starts.
    Existing standing crawls run through the optional external command contract,
    including their real auth and cleanup. Do not copy their product logic into
    this public skill. Their nonzero exit is a failed/incomplete check.
-5. Check Claude B capacity using cross-review's rules before the critic stage.
-   Run one Opus critic through `claude -p --model opus` with stdin closed and a
-   bounded timeout. It must read every frame at its intended size, alongside
-   named approved references and repo design rules, and return a judgment for
-   each frame. Missing/unreadable images, invalid output, timeout or unavailable
-   critic yield incomplete coverage. No silent model fallback. The runner never
-   authorizes paid API use. The requested single Opus lane is the minimum here;
-   a repo may require a separate second critic through its existing reviewer lane.
+5. Check Claude B capacity using cross-review's rules. Review runs separately
+   from the capture cap: sequential Opus calls, ten minutes each, one retry.
+   Sheets contain at most eight frames, one engine/theme per sheet, grouped by
+   at most eight screens per call. Every suspected defect or unreadable detail
+   flags that screen for a full-size second pass in chunks of eight frames.
+   Each batch records its exact frame/screen coverage and attempts in
+   `review-ledger.json`; incomplete or duplicate coverage never passes. No
+   silent model fallback or paid API use. An unavailable batch after its retry
+   remains incomplete. `reviewTimeoutMs` bounds the complete review separately
+   (default two hours); never reduce required coverage to fit it.
 6. Read `report.json` and `report.md`: per-screen disposition, reproduction steps,
    frame paths, control ledger, matrix, selection reasons and exclusions. Contact
-   sheets are indexes, not substitutes for viewing the frames. A screen passes
+   sheets cover the first pass; flagged screens require full-size follow-up. A screen passes
    only with complete functional checks and passing critique. Exit 0 is pass,
    1 confirmed failure, 2 incomplete/no verdict. Keep evidence private and mask
    account artifacts before sharing. Report defects; do not waive or fix them.

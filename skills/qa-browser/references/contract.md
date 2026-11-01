@@ -115,3 +115,59 @@ replays each safe edge from entry until no new DOM states remain. A state cap
 (default 100), cell timeout (60 s) or run timeout (30 min) preserves evidence and
 lists the remainder as incomplete. Cyclic, time-dependent states may need stable
 entry contracts to avoid repeatedly discovering changing content.
+
+
+## Reusing an authenticated standing crawl
+
+Set `standingCrawl.useResults:true` to use the standing harness as the capture
+provider instead of creating a second authentication implementation. Its own
+process provisions and deletes real isolated users and keeps sessions in memory.
+The configured command writes `standingCrawl.report`. The importer validates
+EVERY expected screen/engine/theme/size key, rejects duplicate keys and frame
+paths, verifies PNG viewport dimensions, and imports actual control outcomes.
+A missing cell names its exact key and blocks review. This source format requires
+one declared state per screen key; expose additional states as distinct flow
+entries rather than silently dropping them. A crawl's nonzero exit
+can contain real product findings; preserve them instead of discarding captures.
+
+Source report: `results[]` contains `screen,engine,theme,size,path,failures`;
+`edges[]` contains `screen,engine,theme,width,height,controls,checks?`;
+`interactions[]` contains the same identity plus `index,label,kind,destination,
+changed,error?`. `checks[]` contains `kind,pass`. Missing functional evidence or
+failed/dead controls gives a failed functional result, never an assumed pass.
+The source must supply the actual viewport height; width alone is ambiguous.
+Optional drawer captures use the standing harness's `-control-INDEX.png` suffix
+and are included in visual review. No credentials or session storage belong in
+any report.
+
+Use the target's existing matrix input (for example `CRAWL_SIZES`) for all five
+core sizes. It must use both width and height in filenames. A harness may reuse
+one live authenticated page per engine/theme across sizes, avoiding session
+expiry and a burst of anonymous clients. Keep its original real auth entry and
+cleanup; never invent a local bypass to make a protected screen render.
+
+## Review budget and coverage
+
+`review:{screensPerBatch:8,framesPerSheet:8}`, `criticTimeoutMs:600000`, and
+`reviewTimeoutMs:7200000` configure sequential review. Sheet groups never mix
+engine or theme. A batch may contain multiple sheets; every frame has a caption
+and an exact original path. Suspected defects and illegible details use
+`inspect`, forcing a full-size second pass for that screen's frames in the same
+engine/theme. Full-size calls must resolve `pass` or `fail`. One retry is allowed
+for a process timeout or malformed/missing verdicts. The ledger records every
+attempt and covered frame. Capture's 30-minute cap does not truncate a review
+already admitted under this separate budget. No API billing or new CI lane is
+introduced.
+
+The capture provider must write a fresh report during this invocation; stale
+reports are rejected even when every frame exists. Exit 1 may mean completed
+capture with real product findings, so the importer preserves those findings
+instead of calling completed coverage missing. Other process failures/timeouts
+never reuse a previous report. Guard hooks can re-export the skill's
+`scripts/checks.mjs` functions into the standing harness, keeping image, clipping,
+structure and contrast checks shared with verify-live.
+
+
+Missing approved visual references do not stop diagnostic screenshot review,
+but they block a positive product verdict. Concrete failures remain failures;
+no reference comparison is inferred from an otherwise clean contact sheet.

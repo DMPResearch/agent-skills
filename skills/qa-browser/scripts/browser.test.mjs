@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import {join} from 'node:path';
 import {createServer} from 'node:http';
 import {inspect,steps,inventory} from './browser.mjs';
 const toolchain=process.env.QA_PW_PATH;
@@ -16,6 +18,7 @@ test('served defects fail and corrected screens pass in both real engines',{skip
   const browser=await pw[engine].launch();try{
    const page=await browser.newPage({viewport:{width:390,height:660}});
    broken=true;await page.goto(url);const red=await inspect(page);
+   if(process.env.QA_FIXTURE_OUT){mkdirSync(process.env.QA_FIXTURE_OUT,{recursive:true});await page.screenshot({path:join(process.env.QA_FIXTURE_OUT,'broken-'+engine+'.png')});writeFileSync(join(process.env.QA_FIXTURE_OUT,'broken-'+engine+'.json'),JSON.stringify({status:'fail',issues:red},null,2));}
    assert.ok(red.some(x=>x.includes('overlapping')),'intentional overlap must fail');
    assert.ok(red.some(x=>x.includes('overflow')),'intentional overflow must fail');
    assert.ok(red.some(x=>x.includes('broken image')),'missing image must fail');
@@ -23,7 +26,8 @@ test('served defects fail and corrected screens pass in both real engines',{skip
    assert.ok(red.some(x=>x.includes('stretched image')),'distorted image must fail');
    assert.ok(red.some(x=>x.includes('duplicate visible id')),'duplicate elements must fail');
    assert.ok(red.some(x=>x.includes('contrast')),'unreadable contrast must fail');
-   broken=false;await page.goto(url);assert.deepEqual(await inspect(page),[]);
+   broken=false;await page.goto(url);const green=await inspect(page);assert.deepEqual(green,[]);
+   if(process.env.QA_FIXTURE_OUT){await page.screenshot({path:join(process.env.QA_FIXTURE_OUT,'fixed-'+engine+'.png')});writeFileSync(join(process.env.QA_FIXTURE_OUT,'fixed-'+engine+'.json'),JSON.stringify({status:'pass',issues:green},null,2));}
    assert.equal((await inventory(page)).length,2);
    await page.locator('#save').evaluate(e=>e.addEventListener('click',()=>{e.dataset.clicks=String(Number(e.dataset.clicks||0)+1)}));
    await steps(page,[{action:'double-click',selector:'#save'}]);
