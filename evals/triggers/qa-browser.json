@@ -1,0 +1,6 @@
+[
+  {"prompt":"Run independent QA on every reachable screen of this served app, functional flows and no-slop review.","should_trigger":true},
+  {"prompt":"QA only the screens affected by this PR, with the full browser matrix for those routes.","should_trigger":true},
+  {"prompt":"Implement the new settings page.","should_trigger":false},
+  {"prompt":"Check this backend SQL migration for correctness.","should_trigger":false}
+]
