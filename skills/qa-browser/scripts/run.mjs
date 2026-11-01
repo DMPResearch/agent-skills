@@ -6,6 +6,7 @@ import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 import {spawn,execFileSync} from 'node:child_process';
 import {validate,selectScope,matrix,redact} from './contract.mjs';
+import {observeBuild} from './provenance.mjs';
 import {runCell} from './cell.mjs';
 import {importCrawl} from './external.mjs';
 import {command,critique,save} from './report.mjs';
@@ -14,19 +15,20 @@ const args=process.argv.slice(2),option=name=>args[args.indexOf(name)+1];
 if(!args.includes('--config')){console.error('Usage: run.mjs --config /repo/qa-browser.json --out /evidence [--pr-base REF]');process.exit(2);}
 const configPath=resolve(option('--config')),root=dirname(configPath),out=resolve(args.includes('--out')?option('--out'):join(root,'.qa-browser'));
 mkdirSync(out,{recursive:true});
-const report={version:1,status:'incomplete',started:new Date().toISOString(),cells:[],gaps:[],scope:[],sheets:[],unrun:['native Safari and Android Chrome are separate verify-live lanes']};
-let config,browserModule,adapter,startedServer,deadline,timer,stopping=false;
+const report={version:1,status:'incomplete',started:new Date().toISOString(),cells:[],gaps:[],scope:[],sheets:[],unrun:['Independent Codex code critique belongs to orchestrator cross-review; screenshot lane is Opus-only','native Safari and Android Chrome are separate verify-live lanes']};
+let buildObserver,config,browserModule,adapter,startedServer,deadline,timer,stopping=false;
 const stop=()=>{stopping=true;report.gaps.push('QA run cancelled; remainder unrun');for(const b of browsers.values())b.close().catch(()=>{});};
 process.once('SIGTERM',stop);process.once('SIGINT',stop);
 const browsers=new Map(), launches=new Map();
 const json=path=>JSON.parse(readFileSync(resolve(root,path),'utf8'));
-const git=(...a)=>execFileSync('git',a,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
+const git=(...a)=>execFileSync('git',a,{cwd:resolve(root,config?.repoRoot||'.'),encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
 try{
  config=json(configPath);
  if(typeof config.flows==='string')config.flows=json(config.flows);
  validate(config);
+ report.sourceRoot=resolve(root,config.repoRoot||'.');
  try{report.head=git('rev-parse','HEAD');const dirty=git('status','--porcelain');if(dirty)report.gaps.push('working tree differs from recorded head');}
- catch{report.gaps.push('git head unavailable');if(args.includes('--pr-base'))throw Error('PR mode requires a git checkout');}
+ catch{report.head={kind:'unversioned',root:report.sourceRoot,observedAt:new Date().toISOString()};report.gaps.push('git head unavailable: source directory is unversioned');if(args.includes('--pr-base'))throw Error('PR mode requires a git checkout');}
  deadline=Date.now()+Math.min(config.timeoutMs||1800000,1800000);
  timer=setTimeout(()=>{report.gaps.push('30-minute run cap reached');for(const b of browsers.values())b.close().catch(()=>{});},deadline-Date.now());
  if(config.adapter)adapter=await import(pathToFileURL(resolve(root,config.adapter)));
@@ -42,8 +44,10 @@ try{
   }
  }
  const scope=selectScope(config.flows,graph,config.globals);
+ if(!scope.length&&graph){report.notApplicable=true;report.selection='Changed files do not affect UI ownership';}else{
  if(!scope.length)report.gaps.push('no flows selected; verify change ownership');
  if(config.standingCrawl?.useResults&&scope.some(s=>s.flow.states.length!==1))throw Error('external capture requires one declared state per screen key; expose each state as its own flow');
+ report.prototypeChrome=config.prototypeChrome||[];
  report.scope=scope.map(s=>({id:s.flow.id,tier:s.tier,reason:s.reason}));
  const toolchain=resolve(root,config.playwrightPath||'package.json'),req=createRequire(toolchain);
  for(const name of ['playwright','@playwright/test']){try{browserModule=req(name);break;}catch{}}
@@ -61,6 +65,7 @@ try{
   if(startedServer)await new Promise(r=>setTimeout(r,500));
  }
  if(!healthy)throw Error('served app unavailable; no server restarted');
+ buildObserver=observeBuild(config.baseURL);
  if(adapter?.buildIdentity)report.build=await adapter.buildIdentity({config,root});
  else if(config.buildManifest){
   const manifest=json(config.buildManifest);config.assetHashes=manifest.assets;let mismatch=false;
@@ -71,11 +76,17 @@ try{
    if(!response.ok||hash!==expected)mismatch=true;
   }
   if(!Object.keys(manifest.assets||{}).length||mismatch)report.gaps.push('production asset hashes missing or mismatched');else report.build=manifest.id;
- }else report.gaps.push('production build identity and matching HTML/JS/CSS not verified');
+ }else{
+  if(config.buildProbe?.length){
+   const assets=[];for(const path of config.buildProbe){const url=new URL(path,config.baseURL);if(url.origin!==new URL(config.baseURL).origin)throw Error('build probe must be first party');const response=await fetch(url,{signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error('build probe failed');assets.push({path:url.pathname,sha256:createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex')});}
+   report.build={kind:'served-content',observedAt:new Date().toISOString(),assets,id:createHash('sha256').update(JSON.stringify(assets)).digest('hex')};
+  }
+  report.gaps.push('production build identity and matching HTML/JS/CSS not verified');
+ }
  if(config.standingCrawl){
   const s=config.standingCrawl;
   const captureStarted=Date.now();
-  const result=await command(s.command[0],s.command.slice(1),{cwd:root,timeout:Math.max(1,deadline-Date.now()),env:{...process.env,...s.env,QA_BROWSER_SCOPE:JSON.stringify(scope.map(s=>({screen:s.flow.id,state:typeof s.flow.states[0]==='string'?s.flow.states[0]:s.flow.states[0].id,matrix:matrix(s.tier)})))}});
+  const result=await command(s.command[0],s.command.slice(1),{cwd:root,timeout:Math.max(1,deadline-Date.now()),env:{...process.env,...s.env,QA_BROWSER_CONTROLS:JSON.stringify(scope.map(s=>({screen:s.flow.id,controls:s.flow.controls}))),QA_BROWSER_PROTOTYPE_CHROME:JSON.stringify(config.prototypeChrome||[]),QA_BROWSER_SCOPE:JSON.stringify(scope.map(s=>({screen:s.flow.id,state:typeof s.flow.states[0]==='string'?s.flow.states[0]:s.flow.states[0].id,matrix:matrix(s.tier)})))}});
   writeFileSync(join(out,'standing-crawl.log'),redact(result.stdout+'\n'+result.stderr));
   report.standing={exit:result.code,report:s.report};
   if(s.useResults){
@@ -87,6 +98,7 @@ try{
  if(config.standingCrawl?.useResults){
   const source=json(config.standingCrawl.report);
   const expected=scope.flatMap(s=>matrix(s.tier).map(c=>({...c,screen:s.flow.id,state:typeof s.flow.states[0]==='string'?s.flow.states[0]:s.flow.states[0].id})));
+  if(source.summary?.provenance){report.captureProvenance=source.summary.provenance;if(source.summary.provenance.build?.assets?.length){report.servedBuild=source.summary.provenance.build;if(!report.build||report.build.kind==='served-content')report.build=report.servedBuild;}}
   const imported=importCrawl(source,{expected});report.cells=imported.cells;report.expectedCells=imported.expectedCells;report.runFailures=imported.runFailures;report.runtimeDiagnostics=imported.runtimeDiagnostics;report.gaps.push(...imported.gaps);
  }else{
  if(adapter?.setup)await adapter.setup({config,root});
@@ -94,16 +106,18 @@ try{
  report.expectedCells=tasks.length;
  let next=0;
  await Promise.all([0,1].map(async()=>{
-  while(next<tasks.length&&!stopping&&Date.now()<deadline){const t=tasks[next++];await runCell(t,{config,report,out,browserModule,browsers,launches,adapter});}
+  while(next<tasks.length&&!stopping&&Date.now()<deadline){const t=tasks[next++];await runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver});}
  }));
  if(report.cells.length!==tasks.length)report.gaps.push(`unrun cells: ${tasks.length-report.cells.length}`);
  }
+ if(!config.standingCrawl?.useResults){report.servedBuild=await buildObserver.finish();if(report.servedBuild.assets.length&&!report.build)report.build=report.servedBuild;}
  clearTimeout(timer);
  const b=await browserModule.chromium.launch();
  try{
   await critique(report,config,out,root,b);
  }finally{await b.close();}
 
+ }
 }catch(error){report.gaps.push(redact(error.message));}
 finally{
  clearTimeout(timer);process.removeListener('SIGTERM',stop);process.removeListener('SIGINT',stop);

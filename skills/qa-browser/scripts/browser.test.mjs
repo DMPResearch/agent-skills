@@ -39,3 +39,23 @@ test('served defects fail and corrected screens pass in both real engines',{skip
   }finally{await browser.close();}
  }}finally{await new Promise(r=>server.close(r));}
 });
+
+test('real file chooser and declared empty guard are effects, a mutating guard fails',{skip:!process.env.QA_PW_PATH},async()=>{
+ const {steps}=await import('./browser.mjs');const {createRequire}=await import('node:module');const pw=createRequire(process.env.QA_PW_PATH)('playwright');
+ for(const engine of ['chromium','webkit']){const browser=await pw[engine].launch();try{
+  const page=await browser.newPage();await page.setContent('<input id="email"><input id="file" type="file" hidden><button id="attach" onclick="document.querySelector(\'#file\').click()">Attach</button><button id="send">Send</button>');
+  assert.equal((await steps(page,[{action:'file-chooser',selector:'#attach'}]))[0].type,'file-chooser');
+  assert.equal((await steps(page,[{action:'empty-guard',selector:'#send',input:'#email'}]))[0].type,'empty-guard');
+  await page.locator('#send').evaluate(e=>e.onclick=()=>e.textContent='Changed');
+  await assert.rejects(steps(page,[{action:'empty-guard',selector:'#send',input:'#email'}]),/guard/);
+ }finally{await browser.close();}}
+});
+
+test('declared prototype chrome is excluded while product defects remain visible',{skip:!process.env.QA_PW_PATH},async()=>{
+ const {withPrototypeChrome,inspect}=await import('./browser.mjs');const {createRequire}=await import('node:module');const browser=await createRequire(process.env.QA_PW_PATH)('playwright').chromium.launch();
+ try{const page=await browser.newPage();await page.setContent('<html style="background:white;color:black"><body><aside id="harness" class="status-bar">Prototype controls</aside><input aria-label="First" style="position:absolute;top:100px;left:10px"><input aria-label="Second" style="position:absolute;top:100px;left:10px"></body></html>');
+ assert.ok((await inspect(page)).includes('fake device chrome'));
+ const failures=await withPrototypeChrome(page,[{selector:'#harness',reason:'Prototype navigation, outside product'}],()=>inspect(page));
+ assert.ok(!failures.includes('fake device chrome'));assert.ok(failures.includes('overlapping independent controls'));assert.ok(await page.locator('#harness').isVisible(),'temporary exclusion must be restored');
+ }finally{await browser.close();}
+});

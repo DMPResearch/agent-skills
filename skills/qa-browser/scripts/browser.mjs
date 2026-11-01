@@ -1,11 +1,23 @@
 import {pageChecks} from '../../verify-live/scripts/page-checks.mjs';
 
-export async function steps(page,items,root=page) {
+export async function steps(page,items,root=page,target) {
+ const effects=[];
  for(const s of items){
   const loc=s.role?root.getByRole(s.role,{name:s.selector,exact:true}):s.label?root.getByLabel(s.selector,{exact:true}):root.locator(s.selector||'body');
   const value=s.env?process.env[s.env]:s.value;
   if(s.env&&!value)throw Error('required secret environment value unavailable');
+  if(target&&['click','double-click','file-chooser','empty-guard','fill','press','select','check'].includes(s.action)){
+   const allowed=await loc.evaluate((e,target)=>[...document.querySelectorAll(target)].some(t=>t===e||t.contains(e)),target);
+   if(!allowed)throw Error('break action escapes declared target');
+  }
   switch(s.action){
+   case 'file-chooser':{const event=page.waitForEvent('filechooser');try{await loc.click();await event;effects.push({type:'file-chooser',observed:true});}catch(error){event.catch(()=>{});throw error;}break;}
+   case 'empty-guard':{
+    if(!s.input||await root.locator(s.input).evaluate(e=>e.isContentEditable?e.textContent:e.value)!=='')throw Error('empty guard requires an empty declared input');
+    const snapshot=()=>root.locator('body').evaluate(e=>JSON.stringify([e.innerHTML,[...e.querySelectorAll('input,textarea,select')].map(x=>[x.value,x.checked])]));
+    const before=await snapshot(),url=page.url();let mutation=false;const onRequest=r=>{if(!['GET','HEAD','OPTIONS'].includes(r.method()))mutation=true;};page.on('request',onRequest);
+    try{await loc.click();await page.waitForTimeout(100);if(mutation||page.url()!==url||await snapshot()!==before)throw Error('empty guard changed state or submitted a mutation');effects.push({type:'empty-guard',input:s.input,empty:true,unchanged:true,noMutationRequests:true});}finally{page.off('request',onRequest);}break;
+   }
    case 'click':await loc.click();break;
    case 'double-click':await loc.dblclick();break;
    case 'fill':await loc.fill(String(value));break;
@@ -24,6 +36,7 @@ export async function steps(page,items,root=page) {
    default:throw Error('unsupported action');
   }
  }
+ return effects;
 }
 
 // These checks supplement, rather than copy, verify-live's asset/image/edge checks.
@@ -89,4 +102,17 @@ export async function inventory(page,declaredSelectors=[]){
  return page.locator(['button,a[href],input,textarea,select,[role=button],[role=radio],[role=switch],summary',...declaredSelectors].join(',')).evaluateAll(els=>els.filter(e=>{
   const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width&&r.height&&s.visibility!=='hidden'&&s.display!=='none'&&!e.closest('[inert]');
  }).map(e=>{let node=e,path='';while(node&&node!==document.body){const part=node.id?'#'+CSS.escape(node.id):node.tagName.toLowerCase()+':nth-of-type('+([...node.parentElement.children].filter(x=>x.tagName===node.tagName).indexOf(node)+1)+')';path=part+(path?' > '+path:'');if(node.id)break;node=node.parentElement;}return {path,tag:e.tagName.toLowerCase(),id:e.id,role:e.getAttribute('role'),name:e.getAttribute('aria-label')||e.getAttribute('name')||e.textContent.trim().slice(0,80),href:e.getAttribute('href'),disabled:e.matches(':disabled,[aria-disabled=true]')};}));
+}
+
+export function prototypeChromeStyle(chrome=[]){
+ return chrome.map(({selector,reason})=>{if(!selector||!reason)throw Error('prototype chrome needs selector and reason');return `${selector}, ${selector} * { visibility:hidden !important; }`;}).join('\n');
+}
+
+export async function withPrototypeChrome(page,chrome,operation){
+ const styles=[];
+ try{
+  const content=prototypeChromeStyle(chrome);
+  if(content)for(const frame of page.frames())styles.push(await frame.addStyleTag({content}));
+  return await operation();
+ }finally{for(const style of styles)await style.evaluate(e=>e.remove());}
 }

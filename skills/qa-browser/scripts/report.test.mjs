@@ -15,11 +15,11 @@ test('missing frame cannot be approved; readable report keeps reproduction and g
  const out=mkdtempSync(join(tmpdir(),'qa-report-'));
  try{
   const cell={id:'settings-light',screen:'settings',size:'390x660',engine:'webkit',theme:'light',state:'signed-out',frames:[join(out,'missing.png')],failures:[],gaps:['auth service unavailable'],repro:['Open settings','Click Save'],complete:false};
-  const report={cells:[cell],gaps:[]};
+  const report={head:{kind:'unversioned',root:'/served/source'},build:{kind:'served-content',id:'observed-build'},cells:[cell],gaps:[]};
   await critique(report,{designRules:['rules.md'],references:['approved.png']},out,out);
   assert.ok(report.gaps.some(g=>g.includes('missing frame')));
   assert.equal(save(report,out),2);
-  const md=readFileSync(join(out,'report.md'),'utf8');assert.match(md,/Click Save/);assert.match(md,/auth service unavailable/);
+  const md=readFileSync(join(out,'report.md'),'utf8');assert.match(md,/unversioned/);assert.match(md,/observed-build/);assert.ok(!md.includes('[object Object]'));assert.match(md,/Click Save/);assert.match(md,/auth service unavailable/);
   cell.failures.push('control overlap');assert.equal(save(report,out),1);
   assert.equal(JSON.parse(readFileSync(join(out,'report.json'))).screens[0].status,'fail');
  }finally{rmSync(out,{recursive:true,force:true});}

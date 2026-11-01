@@ -46,6 +46,10 @@ server. A configured start command owns only the process it starts.
    Sheets contain at most eight frames, one engine/theme per sheet, grouped by
    at most eight screens per call. Every suspected defect or unreadable detail
    flags that screen for a full-size second pass in chunks of eight frames.
+   The screenshot lane is deliberately Opus-only. The spec's Codex second critic
+   belongs to the orchestrator's independent cross-review of the product diff,
+   where source and service contracts are available; screenshots cannot establish
+   code findings. This runner never claims that code-review gate passed.
    Each batch records its exact frame/screen coverage and attempts in
    `review-ledger.json`; incomplete or duplicate coverage never passes. No
    silent model fallback or paid API use. An unavailable batch after its retry
@@ -69,3 +73,20 @@ Tool self-tests: `node --test <skill>/scripts/*.test.mjs`. The browser regressio
 suite additionally needs `QA_PW_PATH=/absolute/path/to/package.json` pointing to
 an existing Playwright install with Chromium and WebKit. Fixtures live only in
 the tests. No real service is substituted in product QA.
+
+Repo-specific prototype controls may be excluded with
+`prototypeChrome:[{selector:".harness-toolbar",reason:"Prototype navigation outside product UI"}]`.
+The exclusion is recorded and temporarily hides only declared chrome during
+inspection/capture. Product UI may not be exempted through this setting.
+Declare file-picker effects with a `file-chooser` step. Use an `empty-guard`
+step with `selector` and `input` only when an empty input must cause no mutation,
+state or navigation change. Disabled controls are inventoried without clicking.
+
+`repoRoot` locates the actual source checkout when configuration lives elsewhere.
+Head is read during the run; unversioned sources are explicitly identified.
+`buildProbe` optionally fingerprints declared served paths. Native captures also
+observe first-party document/script/stylesheet bytes. Standing providers supply
+that same observed fingerprint in `summary.provenance.build`. A served-content
+fingerprint never claims production-build validation. Run the CLI to create each
+proof report; do not hand-assemble head, build or visual verdicts afterward.
+A PR with only known non-UI changes exits 0 with `not-applicable`, no browser run.

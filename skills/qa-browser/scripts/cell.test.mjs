@@ -54,3 +54,31 @@ test('state traversal reaches a control enabled by a prior selection',{skip:!pro
   assert.ok(!report.cells[0].gaps.some(g=>g==='declared control not exercised: #disabled'));
  }}finally{for(const b of browsers.values())await b.close();await new Promise(r=>server.close(r));rmSync(out,{recursive:true,force:true});}
 });
+
+test('real break engine exercises all kinds and rejects actions escaping their target',{skip:!process.env.QA_PW_PATH},async()=>{
+ const pw=createRequire(process.env.QA_PW_PATH)('playwright');
+ const server=createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(`<html style="background:white;color:black"><body><form id="form"><label>Email<input id="email" type="email"></label><label>Other<input id="other"></label><button type="button" id="send" onclick="document.querySelector('output').textContent=++window.count">Send</button></form><output>0</output><a id="next" href="/next">Next</a><script>window.count=0</script></body></html>`)});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const out=mkdtempSync(join(tmpdir(),'qa-breaks-')),browsers=new Map(),launches=new Map(),baseURL=`http://127.0.0.1:${server.address().port}`;
+ const breaks=[
+  {kind:'empty',target:'#email',steps:[{action:'fill',selector:'#email',value:''},{action:'value',selector:'#email',value:''}]},
+  {kind:'invalid',target:'#email',steps:[{action:'fill',selector:'#email',value:'invalid'},{action:'value',selector:'#email',value:'invalid'}]},
+  {kind:'double-submit',target:'#send',steps:[{action:'double-click',selector:'#send'},{action:'text',selector:'output',value:'2'}]},
+  {kind:'refresh',target:'#email',steps:[{action:'fill',selector:'#email',value:'draft'},{action:'reload'},{action:'value',selector:'#email',value:''}]},
+  {kind:'back-forward',target:'body',steps:[{action:'click',selector:'#next'},{action:'back'},{action:'forward'},{action:'url',value:'/next'}]},
+  ...['signed-out','signed-in'].map(kind=>({kind,target:'body',steps:[{action:'visible',selector:'body'}]}))
+ ].map(b=>({...b,safe:true}));
+ const flow={id:'breaks',url:'/',entry:'form.js',main:true,states:['signed-out','signed-in'],steps:[],controls:[],breaks};
+ try{for(const engine of ['chromium','webkit']){
+  for(const state of ['signed-out','signed-in']){
+   const report={cells:[],gaps:[]};await runCell({flow,engine,theme:'light',size:'390x660',state:{id:state}},{config:{baseURL,flows:[flow],actionTimeoutMs:500},report,out,browserModule:pw,browsers,launches,adapter:{authenticate:async()=>{}}});
+   for(const kind of ['empty','invalid','double-submit','refresh','back-forward',state])assert.ok(report.cells[0].controls.some(c=>c.break===kind&&c.status==='pass'),engine+' '+kind);
+  }
+  const wrong={...flow,breaks:[{kind:'invalid',target:'#email',safe:true,steps:[{action:'fill',selector:'#other',value:'wrong'},{action:'value',selector:'#other',value:'wrong'}]}]};
+  const report={cells:[],gaps:[]};await runCell({flow:wrong,engine,theme:'light',size:'390x660',state:{id:'signed-out'}},{config:{baseURL,flows:[wrong],actionTimeoutMs:500},report,out,browserModule:pw,browsers,launches});
+  assert.ok(report.cells[0].failures.some(f=>f.includes('break failed: invalid')),'target escape must fail');
+  assert.ok(!report.cells[0].controls.some(c=>c.break==='invalid'&&c.status==='pass'));
+  wrong.breaks=[{kind:'invalid',target:'#email',safe:true,steps:[{action:'fill',selector:'#email',value:'bad'},{action:'value',selector:'#email',value:'unseen'}]}];
+  const outcome={cells:[],gaps:[]};await runCell({flow:wrong,engine,theme:'light',size:'390x660',state:{id:'signed-out'}},{config:{baseURL,flows:[wrong],actionTimeoutMs:500},report:outcome,out,browserModule:pw,browsers,launches});assert.ok(outcome.cells[0].controls.some(c=>c.break==='invalid'&&c.status==='fail'));assert.ok(outcome.cells[0].repro.some(s=>s.includes('unseen')));
+ }}finally{for(const b of browsers.values())await b.close();await new Promise(r=>server.close(r));rmSync(out,{recursive:true,force:true});}
+});

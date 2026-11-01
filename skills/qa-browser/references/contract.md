@@ -171,3 +171,45 @@ structure and contrast checks shared with verify-live.
 Missing approved visual references do not stop diagnostic screenshot review,
 but they block a positive product verdict. Concrete failures remain failures;
 no reference comparison is inferred from an otherwise clean contact sheet.
+
+## Evidence requirements
+
+Imported `edges[].checks` must contain a passing `empty`, `invalid`,
+`double-submit`, `refresh`, `back-forward`, `signed-out` and `signed-in` check
+for every cell. A missing kind is a functional failure. Also supply passing
+checks with exact `target` for every `forms[]`/`inputs[]` selector (empty, invalid,
+double-submit, refresh) and enabled control selector (double-submit, refresh,
+back-forward). A check name is not inferred from a successful click. Every
+control needs a stable selector/path; unidentified targets fail coverage.
+Native break steps bind every mutating action to their target or its descendants.
+Use a form target when its submit button also needs to be exercised. Navigation
+steps operate on the current page, with the declared target present at reset.
+
+Native `file-chooser` waits for the real Playwright filechooser event before
+passing. `empty-guard` requires an empty declared `input`, then verifies unchanged
+DOM/input state/URL and no mutation requests after clicking its `selector`. It
+is an explicit repository expectation, never inferred from the word Send.
+Imported interactions may carry `effects:[{type:"file-chooser",observed:true}]`
+or `{type:"empty-guard",input:"#composer",empty:true,unchanged:true,noMutationRequests:true}`.
+Otherwise an unchanged enabled control fails. Disabled inventory is not clicked.
+
+`prototypeChrome` entries require selector and reason and are recorded in the
+run report and critic prompt. They hide declared harness regions for capture
+and mechanical inspection. Keep product content outside those selectors.
+Providers receive `QA_BROWSER_PROTOTYPE_CHROME` and `QA_BROWSER_CONTROLS` JSON
+and must apply the same contract before capturing.
+
+Source provenance belongs to the actual run. `repoRoot` sets the directory
+where HEAD/dirty state are observed. A non-git source is recorded as unversioned,
+never assigned the tooling repository's SHA. `buildProbe:["/entry/","/app.js"]`
+hashes live first-party responses. Native capture records documents/scripts/styles
+as `servedBuild`; standing providers may use the shared `observeBuild` helper
+and write `summary.provenance:{head,sourceRoot,build}` before exiting. These are
+served-content identities, not production claims. Unreadable assets stay visible
+in the fingerprint. Every fresh review uses the actual cell frame paths in its
+batch ledger; hash-only aliases cannot replace a new run's review coverage.
+
+The visual lane intentionally uses only Opus. The specification's independent
+Codex code critique runs through the orchestrator's cross-review with the actual
+product diff and contracts. It remains explicitly unrun by this CLI; visual
+approval does not imply source approval.

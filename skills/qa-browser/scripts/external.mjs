@@ -1,5 +1,5 @@
 import {readFileSync,existsSync} from 'node:fs';
-import {redact} from './contract.mjs';
+import {redact,breakKinds} from './contract.mjs';
 
 const key=r=>[r.screen,r.engine,r.theme,r.size||`${r.width}x${r.height}`].join('/');
 export function importCrawl(data,{expected,checkFiles=true}){
@@ -35,11 +35,14 @@ export function importCrawl(data,{expected,checkFiles=true}){
   const controls=(data.interactions||[]).filter(x=>x.type!=='navigation-recovery'&&key(x)===key(e));
   const functionalFailures=[];
   for(const check of edge?.checks||[])if(!check.pass)functionalFailures.push('break check failed: '+check.kind);
+  for(const kind of breakKinds)if(!edge?.checks?.some(c=>c.kind===kind&&c.pass===true))functionalFailures.push('missing break check: '+kind);
+  const targets=[...(edge?.forms||[]).map(target=>({target,kinds:['empty','invalid','double-submit','refresh']})),...(edge?.inputs||[]).map(target=>({target,kinds:['empty','invalid','double-submit','refresh']})),...(edge?.controls||[]).filter(c=>!c.disabled).map(c=>({target:typeof c==='string'?c:c.selector||c.path||c.id,kinds:['double-submit','refresh','back-forward']}))];
+  for(const {target,kinds}of targets)for(const kind of kinds)if(!target||!edge?.checks?.some(c=>c.kind===kind&&c.target===target&&c.pass===true))functionalFailures.push('missing break check: '+kind+' for '+redact(target||'unidentified control'));
   if(!edge)functionalFailures.push('no control/flow evidence supplied for this entry');
-  else if(edge.controls.length&&!controls.length)functionalFailures.push('no inventoried controls were exercised');
+  else if(edge.controls.some(c=>!c.disabled)&&!controls.length)functionalFailures.push('no inventoried controls were exercised');
   for(const c of controls){
    if(c.error)functionalFailures.push('control failed: '+redact(c.label||String(c.index)));
-   else if(c.changed===false)functionalFailures.push('control has no verified state or navigation effect: '+redact(c.label||String(c.index)));
+   else if(c.changed!==true&&c.disabled!==true&&!c.effects?.some(e=>(e.type==='file-chooser'&&e.observed===true)||(e.type==='empty-guard'&&e.input&&e.empty===true&&e.unchanged===true&&e.noMutationRequests===true)))functionalFailures.push('control has no verified state or navigation effect: '+redact(c.label||String(c.index)));
   }
   if(r.failures?.some(f=>f.type==='crawl-error'))functionalFailures.push('screen traversal did not complete');
   for(const error of runtime){

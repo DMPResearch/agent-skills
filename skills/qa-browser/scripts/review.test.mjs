@@ -36,6 +36,7 @@ test('real sheets review sequentially, retry once and resolve flagged screens at
    const manifest=JSON.parse(readFileSync(promptPath,'utf8').split('\n').at(-1));
    return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:calls===2?'inspect':'pass',failures:calls===2?['Small text requires full-size check']:[]}))})};
   }});
+  const ledger=JSON.parse(readFileSync(join(out,'review-ledger.json')));assert.ok(ledger.batches.every(b=>b.frames.includes(path)));
   assert.equal(calls,3);assert.equal(report.review.complete,true);assert.equal(report.cells[0].critic,'pass');
   assert.equal(report.review.batches[0].attempts.length,2);assert.equal(report.review.batches[1].mode,'full');
   let quotaCalls=0;

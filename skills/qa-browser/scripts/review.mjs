@@ -52,8 +52,9 @@ export async function runReview(report,config,out,cwd,browser,{invoke=command}={
  for(const c of report.cells){delete c.critic;delete c.visualFailures;}
  const owner=join(process.env.HOME,'.claude','AGENTS.md');
  const credentialRule=existsSync(owner)?readFileSync(owner,'utf8').split('\n').find(l=>l.startsWith('- When an agent looks for a credential'))||'':'';
- const policy=`Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(', ')}. ${credentialRule}\nDo not edit, run commands, access accounts or services. Judge all no-slop rules: duplicated/overlapping controls, fake device chrome, clipping, images, contrast, hierarchy, template composition, generic filler. Approved references: ${(config.references||[]).join(', ')||'none supplied; do not invent an approved reference'}.`;
- report.review={batches:[],complete:false};
+ const policy=`Screenshot lane: Opus-only visual critique; independent code critique belongs to the orchestrator under cross-review. Declared prototype chrome is excluded from product judgment: ${JSON.stringify(config.prototypeChrome||[])}. Its hidden/masked regions are not product blank-space defects.
+Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(', ')}. ${credentialRule}\nDo not edit, run commands, access accounts or services. Judge all no-slop rules: duplicated/overlapping controls, fake device chrome, clipping, images, contrast, hierarchy, template composition, generic filler. Approved references: ${(config.references||[]).join(', ')||'none supplied; do not invent an approved reference'}.`;
+ report.review={visualCritic:'Opus-only',codeCritic:'external cross-review required',batches:[],complete:false};
  const checkpoint=()=>writeFileSync(join(out,'review-ledger.json'),JSON.stringify(report.review,null,2));
  async function call(batch,mode,sheets=[]){
   const key=batch.id+'-'+mode,promptPath=join(out,key+'.prompt.md');
