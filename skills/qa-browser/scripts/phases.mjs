@@ -3,6 +3,7 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {steps,inspect} from './browser.mjs';
 import {trackNavigations} from './navigation.mjs';
+import {observeRuntime,verifyIdentity} from './runtime.mjs';
 import {redact} from './contract.mjs';
 
 export function servicePacer(intervals={}){
@@ -29,6 +30,7 @@ export async function prepareEngines(tasks,env){
     adapter.prepareEngine({context,engine,config,pace:env.pace}),
     new Promise((_,reject)=>{timer=setTimeout(()=>{context.close().catch(()=>{});reject(Error('shared entry exceeded 60 second cap'));},60000);})
    ]);
+   await verifyIdentity(adapter,{context,config,engine,state:'signed-in'},env.identities);
    const storage=await context.storageState();
    if(!storage.cookies.length&&!storage.origins.length)throw Error('shared entry produced no reusable browser session');
    sessions.set(engine,storage);record.status='pass';
@@ -55,6 +57,7 @@ export function terminalQueue(){
     const {task,recipe,kind,cells,id}=item,{flow,state,engine,theme,size}=task;
     const record={id,scope:'engine',engine,screen:flow.id,kind,target:recipe.selector||recipe.target,cells:cells.map(c=>c.id),status:'incomplete'};report.terminalChecks.push(record);
     let context,timer,entered=false;
+    const runtime={screen:flow.id,state:state.id,engine,size,failures:[],gaps:[],diagnostics:[]};
     try{
      if(!recipe.safe||recipe.destructive&&!recipe.isolated)throw Error('terminal control requires declared safe isolated data');
      const [width,height]=size.split('x').map(Number);
@@ -62,8 +65,9 @@ export function terminalQueue(){
      timer=setTimeout(()=>context.close().catch(()=>{}),60000);
      if(config.themeInit)await context.addInitScript(config.themeInit.replaceAll('THEME',JSON.stringify(theme)));
      await adapter?.authenticate?.({context,state:state.id,config,flow,pace:env.pace});
+     if(state.id==='signed-in')await verifyIdentity(adapter,{context,config,flow,state:state.id,engine},env.identities);
      const page=await context.newPage(),root=flow.frame?page.frameLocator(flow.frame):page,navigation=trackNavigations(page);
-     page.on('pageerror',error=>{cells[0].diagnostics||=[];cells[0].diagnostics.push({kind:'pageerror',message:redact(error.message),stack:redact(error.stack||''),flow:flow.id,state:state.id,engine,viewport:size});cells[0].failures.push('uncaught page error: '+redact(error.message));});
+     observeRuntime(page,runtime,config);
      await adapter?.reset?.({page,flow,state:state.id,config,pace:env.pace});
      await navigation.run(()=>page.goto(new URL(flow.url,config.baseURL).href,{waitUntil:'load'}));
      await adapter?.enter?.({page,flow,state:state.id,pace:env.pace});
@@ -74,10 +78,11 @@ export function terminalQueue(){
      const failures=await inspect(page);if(failures.length)throw Error(failures.join('; '));
      const path=join(out,'terminal-'+id+'.png');await page.screenshot({path,fullPage:true,mask:config.redactSelectors?.map(s=>root.locator(s))||[]});cells[0].frames.push(path);record.frame=path;
      const gaps=navigation.unclassified();if(gaps.length)throw Error('unclassified cancelled request: '+redact(gaps[0].url()));
-     record.status='pass';
+     record.status=runtime.failures.length?'fail':'pass';
     }catch(error){record.error=redact(error.message);if(entered){record.status='fail';for(const cell of cells)cell.failures.push('shared terminal expected effect failed: '+record.target+'; '+record.error);}else report.gaps.push('shared terminal check unavailable: '+id+'; '+record.error);}
     finally{clearTimeout(timer);if(context)await context.close().catch(()=>{});}
     for(const cell of cells){
+     cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps);cell.diagnostics||=[];cell.diagnostics.push(...runtime.diagnostics);
      if(['pass','fail'].includes(record.status))cell.gaps=cell.gaps.filter(g=>g!=='terminal check pending: '+id);
      for(const entry of cell.controls.filter(c=>c.terminal===id))entry.status=record.status==='pass'?'shared':record.status;
      cell.complete=cell.gaps.length===0;

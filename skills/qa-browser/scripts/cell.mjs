@@ -2,11 +2,12 @@ import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {redact,breakKinds} from './contract.mjs';
+import {observeRuntime,verifyIdentity} from './runtime.mjs';
 import {readBody} from './body.mjs';
 import {trackNavigations} from './navigation.mjs';
 import {inspect,inventory,steps,withPrototypeChrome,NoEffectIncompleteError} from './browser.mjs';
 
-export async function runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver,sessions,terminals,pace}){
+export async function runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver,sessions,terminals,pace,identities=new Map()}){
  const {flow,engine,theme,size,state}=t;
  const id=`${flow.id}-${state.id}-${engine}-${theme}-${size}`.replace(/[^a-z0-9.-]/gi,'_');
  const cell={id,screen:flow.id,state:state.id,engine,theme,size,complete:false,frames:[],failures:[],gaps:[],controls:[],repro:[`Open ${redact(new URL(flow.url,config.baseURL))}`,`Use ${engine}, ${size}, ${theme}, state ${state.id}`]};report.cells.push(cell);
@@ -28,18 +29,15 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    try{await adapter.authenticate({context,state:state.id,config,flow,pace});}
    catch{report.blockedAuthStates||=[];report.blockedAuthStates.push(state.id);cell.gaps.push('real authentication failed; later cells in this state blocked');return;}
   }
+  if(state.id==='signed-in'){
+   try{await verifyIdentity(adapter,{context,config,flow,state:state.id,engine},identities);cell.sessionVerified=true;}
+   catch(error){cell.gaps.push('signed-in session identity unavailable: '+redact(error.message));return;}
+  }
   const page=await context.newPage(),surface=flow.frame?page.frameLocator(flow.frame):page;
-  page.on('console',m=>{if(['error','warning'].includes(m.type())){const source=m.location();const target=m.type()==='warning'?cell.gaps:observed;target.push('console '+m.type()+' at '+redact(source.url||'[inline]')+':'+source.lineNumber);}});
-  cell.diagnostics=[];
-  page.on('pageerror',error=>{
-   const detail={kind:'pageerror',message:redact(error.message),stack:redact(error.stack||''),flow:flow.id,state:state.id,engine,viewport:size};
-   cell.diagnostics.push(detail);observed.push('uncaught page error: '+detail.message);
-  });
+  observeRuntime(page,cell,config,observed);
   navigation=trackNavigations(page);
   const act=(items,target)=>steps(page,items,surface,target,navigation.run,pace);
-  page.on('requestfailed',r=>{const aborted=/ABORTED|cancelled|canceled/i.test(r.failure()?.errorText||'');if(!aborted)observed.push('request failed: '+redact(r.url()));});
   page.on('response',r=>{
-   if(r.status()>=400)observed.push(`HTTP ${r.status()}: ${redact(r.url())}`);
    const url=new URL(r.url());
    if(config.assetHashes&&url.origin===new URL(config.baseURL).origin&&['script','stylesheet','font'].includes(r.request().resourceType())){
     const expected=config.assetHashes[url.pathname];
@@ -50,7 +48,6 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
     }));
    }
   });
-  page.on('requestfinished',r=>{const x=r.timing();if(x.responseEnd>Number(config.slowRequestMs||5000))observed.push('slow request: '+redact(r.url()));});
   const reset=async()=>{
    if(adapter?.reset)await adapter.reset({page,flow,state:state.id,config,pace});
    await navigation.run(()=>page.goto(new URL(flow.url,config.baseURL).href,{waitUntil:'load'}));

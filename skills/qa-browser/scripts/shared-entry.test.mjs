@@ -11,6 +11,7 @@ test('CLI seeds real fixture sessions once per engine and schedules terminal wor
  const directory=mkdtempSync(join(tmpdir(),'qa-shared-'));let signins=0,signouts=0,protectedReads=0;
  const sessions=new Set(),events=[],paced=[];
  const server=createServer((req,res)=>{
+  if(req.url==='/identity'){const sid=req.headers.cookie?.match(/fixture_session=(\d+)/)?.[1];if(!sessions.has(sid)){res.writeHead(401);res.end();}else res.end(JSON.stringify({id:'fixture-user'}));return;}
   if(req.url==='/paced'){paced.push(Date.now());res.end('Ready');return;}
   if(req.url==='/login'){
    const session=String(++signins);sessions.add(session);events.push('login');res.setHeader('Set-Cookie',`fixture_session=${session}; Path=/; HttpOnly; SameSite=Lax`);res.end('Ready');return;
@@ -29,7 +30,7 @@ test('CLI seeds real fixture sessions once per engine and schedules terminal wor
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  try{
   const adapter=join(directory,'adapter.mjs');
-  writeFileSync(adapter,`export async function prepareEngine({context,config}){const page=await context.newPage();await page.goto(config.baseURL+'/login');await page.close();} export async function authenticate() {}`);
+  writeFileSync(adapter,`export async function prepareEngine({context,config}){const page=await context.newPage();await page.goto(config.baseURL+'/login');await page.close();} export async function authenticate() {} export async function verifySession({context,config}){const result=await context.request.get(config.baseURL+'/identity');if(!result.ok())throw Error('session unavailable');return result.json();}`);
   const flow={id:'private',entry:'private.js',main:true,url:'/protected',states:['signed-in'],steps:[{action:'text',selector:'body',value:'Private content'},{action:'click',selector:'#probe',service:'probe'},{action:'visible',selector:'output[data-ready]'}],controls:[{selector:'#exit',safe:true,terminal:true,steps:[{action:'click',selector:'#exit'},{action:'text',selector:'body',value:'Signed out'}]}],breaks:[]};
   const config={version:1,baseURL:`http://127.0.0.1:${server.address().port}`,playwrightPath:process.env.QA_PW_PATH,adapter,serviceIntervals:{probe:100},flows:[flow]};
   const file=join(directory,'config.json'),out=join(directory,'out');writeFileSync(file,JSON.stringify(config));

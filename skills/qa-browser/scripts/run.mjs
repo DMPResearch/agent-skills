@@ -117,7 +117,7 @@ try{
  const tasks=scope.flatMap(s=>matrix(s.tier).flatMap(cell=>(s.tier==='global'?s.flow.states.slice(0,1):s.flow.states).map(state=>({...s,...cell,state:typeof state==='string'?{id:state}:state}))));
  report.expectedCells=tasks.length;
  const pace=servicePacer(config.serviceIntervals),terminals=terminalQueue();
- const env={config,report,out,browserModule,browsers,launches,adapter,buildObserver,pace,terminals};
+ const env={config,report,out,browserModule,browsers,launches,adapter,buildObserver,pace,terminals,identities:new Map()};
  const sessions=await prepareEngines(tasks,env);env.sessions=sessions;
  let next=0;
  await Promise.all([0,1].map(async()=>{

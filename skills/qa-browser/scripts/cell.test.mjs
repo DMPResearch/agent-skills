@@ -71,7 +71,7 @@ test('real break engine exercises all kinds and rejects actions escaping their t
  const flow={id:'breaks',url:'/',entry:'form.js',main:true,states:['signed-out','signed-in'],steps:[],controls:[],breaks};
  try{for(const engine of ['chromium','webkit']){
   for(const state of ['signed-out','signed-in']){
-   const report={cells:[],gaps:[]};await runCell({flow,engine,theme:'light',size:'390x660',state:{id:state}},{config:{baseURL,flows:[flow],actionTimeoutMs:500},report,out,browserModule:pw,browsers,launches,adapter:{authenticate:async()=>{}}});
+   const report={cells:[],gaps:[]};await runCell({flow,engine,theme:'light',size:'390x660',state:{id:state}},{config:{baseURL,flows:[flow],actionTimeoutMs:500},report,out,browserModule:pw,browsers,launches,adapter:{authenticate:async()=>{},verifySession:async()=>({id:'fixture-user'})}});
    for(const kind of ['empty','invalid','double-submit','refresh','back-forward',state])assert.ok(report.cells[0].controls.some(c=>c.break===kind&&c.status==='pass'),engine+' '+kind);
   }
   const wrong={...flow,breaks:[{kind:'invalid',target:'#email',safe:true,steps:[{action:'fill',selector:'#other',value:'wrong'},{action:'value',selector:'#other',value:'wrong'}]}]};
