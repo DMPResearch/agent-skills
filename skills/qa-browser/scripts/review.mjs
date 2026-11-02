@@ -77,6 +77,8 @@ function receipt(stdout,frames){
 }
 
 export async function runReview(report,config,out,cwd,browser,{invoke=command}={}){
+ for(const c of report.cells){delete c.critic;delete c.visualFailures;}
+ delete report.review;
  const batches=reviewBatches(report.cells,config.review),deadline=Date.now()+Math.min(config.reviewTimeoutMs||7200000,7200000);
  const priorPath=join(out,'review-ledger.json');
  let previous;
@@ -85,7 +87,6 @@ export async function runReview(report,config,out,cwd,browser,{invoke=command}={
  const identity=digest(JSON.stringify({tool:digest(readFileSync(new URL('./review.mjs',import.meta.url))),owner:evidence([owner]),head:report.head,build:typeof report.build==='object'?{kind:report.build.kind,id:report.build.id}:report.build,servedBuild:report.servedBuild?.id,
   rules:evidence(config.designRules||[]),references:evidence(config.references||[]),chrome:config.prototypeChrome||[],version:2}));
  let halted=false;
- for(const c of report.cells){delete c.critic;delete c.visualFailures;}
  report.gaps=report.gaps.filter(g=>!g.startsWith('critic batch incomplete')&&!g.startsWith('some frames lack')&&!g.startsWith('Opus quota unavailable')&&!g.startsWith('critic calibration missed')&&!g.startsWith('review budget exhausted'));
  const credentialRule=existsSync(owner)?readFileSync(owner,'utf8').split('\n').find(l=>l.startsWith('- When an agent looks for a credential'))||'':'';
  const policy=`Screenshot lane: Opus-only visual critique; independent code critique belongs to the orchestrator under cross-review. Declared prototype chrome is excluded from product judgment: ${JSON.stringify(config.prototypeChrome||[])}. Its hidden/masked regions are not product blank-space defects. A frame with isEntry:true shows the initial screen before any control or break action; judge later frames as the resulting states.

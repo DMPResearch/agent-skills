@@ -25,13 +25,13 @@ async function fixture(check){
 test('one screen is split into bounded calls with exact unique coverage',()=>{
  const cells=[{id:'a',screen:'preferences',engine:'chromium',theme:'light',size:'390x660',frames:Array.from({length:70},(_,i)=>i+'.png')}];
  const batches=reviewBatches(cells);
- assert.ok(batches.every(b=>b.frames.length<=7),'one sheet reserves one of eight frames for calibration');
+ assert.ok(batches.every(b=>b.frames.length<=28),'real frames stay inside the measured batch bound');
  assert.equal(batches.flatMap(b=>b.frames).length,70);
  assert.equal(new Set(batches.map(b=>b.id)).size,batches.length);
 });
 
 test('every critic batch must catch its generated defect without reporting it as a screen finding',{skip:!enabled},()=>fixture(async({report,out,browser,invoke,manifests,paths})=>{
- await runReview(report,{},out,out,browser,{invoke});
+ await runReview(report,{review:{framesPerBatch:7}},out,out,browser,{invoke});
  assert.ok(manifests.every(m=>m.length<=8&&m.filter(f=>!paths.some(path=>readFileSync(path).equals(readFileSync(f.path)))).length===1));
  assert.equal(report.review.complete,true);assert.equal(report.cells[0].critic,'pass');assert.deepEqual(report.cells[0].visualFailures,[]);
  assert.ok(report.review.batches.every(b=>b.canary?.status==='caught'));
@@ -51,7 +51,7 @@ test('a critic missing calibration yields no verdict and is not retried blindly'
 
 test('resume reruns only failed batches and rejects changed frame identity',{skip:!enabled},()=>fixture(async({report,out,browser,invoke,paths})=>{
  let calls=0;
- const config={review:{resume:true}};
+ const config={review:{resume:true,framesPerBatch:7}};
  await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return calls===2||calls===3?{code:124,stdout:''}:invoke(...args);}});
  assert.equal(report.review.complete,false);assert.equal(calls,3);
  calls=0;await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return invoke(...args);}});
@@ -85,4 +85,11 @@ test('review-cap exhaustion is durable and resumes without repeating completed c
 test('one-attempt review admission never performs an automatic retry',{skip:!enabled},()=>fixture(async({report,out,browser})=>{
  let calls=0;await runReview(report,{review:{framesPerBatch:7,attempts:1}},out,out,browser,{invoke:async()=>{calls++;return {code:124,stdout:''};}});
  assert.equal(calls,2);assert.ok(report.review.batches.every(b=>b.attempts.length===1));assert.equal(report.review.complete,false);
+}));
+
+test('invalid saved review evidence cannot leave an earlier passing critic visible',{skip:!enabled},()=>fixture(async({report,out,browser})=>{
+ report.cells[0].critic='pass';report.cells[0].visualFailures=['stale'];report.review={complete:true};
+ writeFileSync(join(out,'review-ledger.json'),'{invalid');
+ await assert.rejects(runReview(report,{review:{resume:true}},out,out,browser));
+ assert.equal(report.cells[0].critic,undefined);assert.equal(report.cells[0].visualFailures,undefined);assert.equal(report.review,undefined);
 }));
