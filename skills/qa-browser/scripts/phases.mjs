@@ -44,7 +44,7 @@ export function terminalQueue(){
  const pending=new Map();
  return {
   defer(task,cell,recipe,kind){
-   const key=createHash('sha256').update(JSON.stringify([task.engine,task.state.id,kind,{target:recipe.selector||recipe.target,steps:recipe.steps,safe:recipe.safe,destructive:recipe.destructive,isolated:recipe.isolated}])).digest('hex').slice(0,16);
+   const key=createHash('sha256').update(JSON.stringify([task.engine,task.flow.url,task.state.id,kind,{target:recipe.selector||recipe.target,steps:recipe.steps,safe:recipe.safe,destructive:recipe.destructive,isolated:recipe.isolated}])).digest('hex').slice(0,16);
    let item=pending.get(key);
    if(!item){item={id:key,task,recipe,kind,cells:[]};pending.set(key,item);}
    if(!item.cells.includes(cell))item.cells.push(cell);
@@ -55,7 +55,7 @@ export function terminalQueue(){
    const {report,config,adapter,out,browsers,sessions}=env;report.terminalChecks=[];
    for(const item of pending.values()){
     const {task,recipe,kind,cells,id}=item,{flow,state,engine,theme,size}=task;
-    const record={id,scope:'engine',engine,screen:flow.id,kind,target:recipe.selector||recipe.target,cells:cells.map(c=>c.id),status:'incomplete'};report.terminalChecks.push(record);
+    const record={id,scope:'route-engine',route:flow.url,engine,screen:flow.id,kind,target:recipe.selector||recipe.target,cells:cells.map(c=>c.id),status:'incomplete'};report.terminalChecks.push(record);
     let context,timer,entered=false,observer;
     const runtime={screen:flow.id,state:state.id,engine,size,failures:[],gaps:[],diagnostics:[]};
     try{
@@ -72,6 +72,7 @@ export function terminalQueue(){
      await navigation.run(()=>page.goto(new URL(flow.url,config.baseURL).href,{waitUntil:'load'}));
      await adapter?.enter?.({page,flow,state:state.id,pace:env.pace});
      await steps(page,[...state.setup||[],...flow.steps],root,undefined,navigation.run,env.pace);
+     if(!await observer.settle())throw Error('in-flight entry requests unresolved before terminal action');
      await root.locator(recipe.selector||recipe.target).waitFor({state:'attached'});
      entered=true;
      await steps(page,recipe.steps,root,kind==='break'?recipe.target:undefined,navigation.run,env.pace);

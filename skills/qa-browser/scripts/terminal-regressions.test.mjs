@@ -23,3 +23,20 @@ test('terminal HTTP and console errors fail the real CLI check',{skip:!process.e
   assert.ok(report.cells.every(c=>c.failures.some(f=>f.includes('HTTP 500'))&&c.failures.some(f=>f.includes('console error'))));
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));rmSync(dir,{recursive:true,force:true});}
 });
+
+test('identical terminal recipes execute on both routes and attribute the broken route',{skip:!process.env.QA_PW_PATH,timeout:25000},async()=>{
+ const counts={a:0,b:0},server=createServer((req,res)=>{
+  res.setHeader('Content-Type','text/html');
+  if(req.url.startsWith('/exit-')){const route=req.url.slice(-1);counts[route]++;res.writeHead(route==='b'?500:200);res.end('<html style="background:white;color:black"><body>Signed out</body></html>');return;}
+  res.end('<html style="background:white;color:black"><body><a id="exit" href="/exit-'+(req.url==='/b'?'b':'a')+'">End</a></body></html>');
+ });
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const dir=mkdtempSync(join(tmpdir(),'qa-terminal-routes-'));
+ try{
+  const control={selector:'#exit',safe:true,terminal:true,steps:[{action:'click',selector:'#exit'},{action:'text',selector:'body',value:'Signed out'}]},flows=['a','b'].map(id=>({id,entry:'entry.js',url:'/'+id,main:true,states:['signed-out'],steps:[],controls:[control],breaks:[]}));
+  const file=join(dir,'config.json'),out=join(dir,'out');writeFileSync(file,JSON.stringify({version:1,baseURL:`http://127.0.0.1:${server.address().port}`,playwrightPath:process.env.QA_PW_PATH,flows}));
+  const result=await command(process.execPath,[fileURLToPath(new URL('./run.mjs',import.meta.url)),'--config',file,'--out',out],{cwd:dir,timeout:20000});const report=JSON.parse(readFileSync(join(out,'report.json')));
+  assert.equal(result.code,1);assert.deepEqual(counts,{a:2,b:2});assert.equal(report.terminalChecks.length,4);
+  assert.ok(report.cells.filter(c=>c.screen==='b').every(c=>c.failures.some(f=>f.includes('HTTP 500'))&&!c.controls.some(x=>x.status==='shared')));
+  assert.ok(report.cells.filter(c=>c.screen==='a').every(c=>!c.failures.some(f=>f.includes('HTTP 500'))));
+ }finally{server.closeAllConnections();await new Promise(r=>server.close(r));rmSync(dir,{recursive:true,force:true});}
+});

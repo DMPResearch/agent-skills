@@ -37,15 +37,17 @@ async function sharedProof(secondary=false){
   const result=await command(process.execPath,[fileURLToPath(new URL('./run.mjs',import.meta.url)),'--config',file,'--out',out],{cwd:directory,timeout:30000});
   const report=JSON.parse(readFileSync(join(out,'report.json'),'utf8'));
   assert.equal(report.cells.length,secondary?40:20);assert.equal(signins,2,'one real service session per engine');assert.equal(signouts,2,'terminal action runs once per engine');
-  assert.equal(report.terminalChecks.length,2,'identical terminal effects across flows share one engine check');
+  assert.equal(report.terminalChecks.length,secondary?4:2,'each route has an independent engine check');
   assert.ok(paced.length>=20);for(let i=1;!secondary&&i<paced.length;i++)assert.ok(paced[i]-paced[i-1]>=70,'requests must be paced rather than burst');
   assert.ok(protectedReads>=20);assert.equal(events.slice(0,events.indexOf('exit')).filter(e=>e==='protected').length>=20,true,'terminal actions must follow all normal cells');
   assert.ok(report.cells.every(c=>!c.failures.some(f=>f.includes('HTTP 401'))));
-  assert.equal(report.terminalChecks.length,2,'identical terminal effects across flows share one engine check');
-  assert.equal(report.sharedEntry.length,2);assert.ok(report.terminalChecks.every(c=>c.status==='pass'&&c.scope==='engine'));
+  assert.equal(report.terminalChecks.length,secondary?4:2,'each route has an independent engine check');
+  assert.equal(report.sharedEntry.length,2);assert.ok(report.terminalChecks.every(c=>c.scope==='route-engine'));
+  if(secondary){assert.ok(report.terminalChecks.filter(c=>c.route==='/alternate').every(c=>c.status==='incomplete'));assert.ok(report.cells.filter(c=>c.screen==='alternate').every(c=>c.gaps.length&&!c.controls.some(x=>x.status==='shared')));}
+  else assert.ok(report.terminalChecks.every(c=>c.status==='pass'),JSON.stringify({checks:report.terminalChecks,failures:report.cells.flatMap(c=>c.failures),gaps:report.cells.flatMap(c=>c.gaps.filter(g=>/request/.test(g)))}));
   assert.equal(result.code,2,'no critic/design rules cannot give a pass');
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));rmSync(directory,{recursive:true,force:true});}
 }
 
 test('CLI seeds real fixture sessions once per engine and schedules terminal work after captures',{skip:!process.env.QA_PW_PATH},()=>sharedProof());
-test('terminal effects shared across route flows run once per engine',{skip:!process.env.QA_PW_PATH},()=>sharedProof(true));
+test('each route keeps its own terminal result after shared-session revocation',{skip:!process.env.QA_PW_PATH},()=>sharedProof(true));
