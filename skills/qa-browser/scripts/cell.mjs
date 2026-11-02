@@ -27,7 +27,11 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   }
   const page=await context.newPage(),surface=flow.frame?page.frameLocator(flow.frame):page;
   page.on('console',m=>{if(['error','warning'].includes(m.type())){const source=m.location();const target=m.type()==='warning'?cell.gaps:observed;target.push('console '+m.type()+' at '+redact(source.url||'[inline]')+':'+source.lineNumber);}});
-  page.on('pageerror',()=>observed.push('uncaught page error'));
+  cell.diagnostics=[];
+  page.on('pageerror',error=>{
+   const detail={kind:'pageerror',message:redact(error.message),stack:redact(error.stack||''),flow:flow.id,state:state.id,engine,viewport:size};
+   cell.diagnostics.push(detail);observed.push('uncaught page error: '+detail.message);
+  });
   navigation=trackNavigations(page);
   const act=(items,target)=>steps(page,items,surface,target,navigation.run);
   page.on('requestfailed',r=>{const aborted=/ABORTED|cancelled|canceled/i.test(r.failure()?.errorText||'');if(!aborted)observed.push('request failed: '+redact(r.url()));});
@@ -66,15 +70,16 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    const path=queue.shift();await reset();for(const c of path)await act(c.steps);
    const controls=await withPrototypeChrome(page,config.prototypeChrome,()=>inventory(surface,flow.controls.map(c=>c.selector)));
    for(const target of await surface.locator('form').evaluateAll(es=>es.map((e,i)=>e.id?'#'+e.id:'form:nth-of-type('+(i+1)+')')))reachedForms.add(target);
+   const bindings=await Promise.all(controls.map(async item=>({item,loc:await matchingControl(surface,item,flow.controls),breaks:await matchingBreaks(surface,item,flow.breaks)})));
    for(const item of controls.filter(c=>['input','textarea','select'].includes(c.tag)))reachedInputs.add(item.id?'#'+item.id:item.name);
+   for(const {item,breaks} of bindings)if(['input','textarea','select'].includes(item.tag))for(const b of flow.breaks.filter(b=>(b.coverageTarget||b.target)===(item.id?'#'+item.id:item.name)&&!breaks.includes(b)))cell.gaps.push('break alias does not bind input: '+redact(b.coverageTarget||b.target));
    const fingerprint=await surface.locator('body').evaluate(e=>JSON.stringify({text:e.innerText,controls:[...e.querySelectorAll('input,select,textarea,button,[role=button],[role=radio],[role=switch],a[href],summary')].map(x=>[x.id,x.type,x.checked,x.value,x.disabled,x.hidden,...['aria-pressed','aria-checked','aria-selected','aria-expanded','aria-disabled'].map(a=>x.getAttribute(a))]),dialogs:[...e.querySelectorAll('[role=dialog],dialog[open]')].map(x=>x.innerText)}));
    const key=createHash('sha256').update(page.url()+fingerprint).digest('hex');
    if(seen.has(key))continue;seen.add(key);states++;
    if(states>(config.maxStates||100)){cell.gaps.push('state traversal limit reached');break;}
    if(path.length)await snap(`state-${states}`);
-   for(const item of controls){
-    const loc=await matchingControl(surface,item,flow.controls);
-    if(!loc&&['input','textarea','select'].includes(item.tag)&&flow.breaks.some(b=>b.target===(item.id?'#'+item.id:item.name))){cell.controls.push({tag:item.tag,status:'covered-by-break-contract'});continue;}
+   for(const {item,loc,breaks} of bindings){
+    if(!loc&&['input','textarea','select'].includes(item.tag)&&breaks.length){cell.controls.push({tag:item.tag,status:'covered-by-break-contract'});continue;}
     if(item.disabled){cell.controls.push({selector:loc?.selector,tag:item.tag,status:'disabled'});continue;}
     if(loc){
      reachedControls.add(loc.selector);
@@ -100,10 +105,10 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   for(const control of flow.controls)if(!cell.controls.some(c=>c.selector===control.selector))cell.gaps.push('declared control not exercised: '+redact(control.selector));
   const required=breakKinds;
   for(const kind of required)if(!flow.breaks.some(b=>b.kind===kind))cell.gaps.push('missing break contract: '+kind);
-  for(const target of new Set([...reachedForms,...reachedInputs]))for(const kind of ['empty','invalid','double-submit','refresh'])if(!flow.breaks.some(b=>b.kind===kind&&b.target===target))cell.gaps.push('missing '+kind+' expected outcome for '+redact(target));
+  for(const target of new Set([...reachedForms,...reachedInputs]))for(const kind of ['empty','invalid','double-submit','refresh'])if(!flow.breaks.some(b=>b.kind===kind&&(b.coverageTarget||b.target)===target))cell.gaps.push('missing '+kind+' expected outcome for '+redact(target));
   for(const target of reachedControls)for(const kind of ['double-submit','refresh','back-forward'])if(!flow.breaks.some(b=>b.kind===kind&&b.target===target))cell.gaps.push('missing '+kind+' expected outcome for control '+redact(target));
   for(const auth of ['signed-out','signed-in'])if(!flow.states.some(s=>(typeof s==='string'?s:s.id)===auth))cell.gaps.push('missing real auth state: '+auth);
-  for(const b of flow.breaks){
+  for(const [breakIndex,b] of flow.breaks.entries()){
    if(b.state&&b.state!==state.id)continue;
    if(b.notApplicable&&b.reason&&!reachedForms.size&&!reachedInputs.size&&(b.kind!=='double-submit'||!reachedControls.size)&&['empty','invalid','double-submit'].includes(b.kind))continue;
    if(!b.safe){cell.gaps.push('break safety undeclared: '+b.kind);continue;}
@@ -112,8 +117,8 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    const validAction=b.kind==='empty'?b.steps.some(s=>s.action==='fill'&&s.value===''):b.kind==='invalid'?b.steps.some(s=>s.action==='fill'&&(s.env||s.value)):b.kind==='double-submit'?actions.includes('double-click'):b.kind==='refresh'?actions.includes('reload'):b.kind==='back-forward'?actions.includes('back')&&actions.includes('forward'):true;
    if(!validAction){cell.gaps.push('break does not exercise '+b.kind);continue;}
    if(['signed-out','signed-in'].includes(b.kind)&&state.id!==b.kind)continue;
-   try{await reset();if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});await act(b.steps,b.target);await snap('break-'+b.kind);cell.controls.push({break:b.kind,target:b.target,status:'pass'});}
-   catch{cell.failures.push('break failed: '+b.kind+' on '+redact(b.target));cell.controls.push({break:b.kind,target:b.target,status:'fail'});cell.repro.push('Run '+b.kind+' on '+redact(b.target),...b.steps.map(s=>redact(s.action+' '+(s.selector||'page')+' '+(s.env?'[environment]':s.value??''))));}
+   try{await reset();if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});await act(b.steps,b.target);await snap('break-'+b.kind+'-'+breakIndex+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,status:'pass'});}
+   catch{cell.failures.push('break failed: '+b.kind+' on '+redact(b.target));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,status:'fail'});cell.repro.push('Run '+b.kind+' on '+redact(b.target),...b.steps.map(s=>redact(s.action+' '+(s.selector||'page')+' '+(s.env?'[environment]':s.value??''))));}
   }
   await Promise.all(assetChecks);
   cell.failures=[...new Set(cell.failures)];cell.gaps=[...new Set(cell.gaps)];
@@ -132,4 +137,15 @@ async function matchingControl(page,item,declared){
   const match=await page.locator(c.selector).evaluateAll((els,path)=>els.some(e=>e===document.querySelector(path)),item.path);
   if(match)return c;
  }
+}
+
+async function matchingBreaks(page,item,declared){
+ const matches=[];
+ for(const b of declared){
+  if(!b.target)continue;
+  const alias=b.coverageTarget||b.target;
+  if(alias!==(item.id?'#'+item.id:item.name))continue;
+  if(await page.locator(b.target).evaluateAll((els,path)=>els.some(e=>e===document.querySelector(path)),item.path))matches.push(b);
+ }
+ return matches;
 }
