@@ -44,7 +44,7 @@ export function terminalQueue(){
  const pending=new Map();
  return {
   defer(task,cell,recipe,kind){
-   const key=createHash('sha256').update(JSON.stringify([task.engine,task.flow.url,task.state.id,kind,recipe])).digest('hex').slice(0,16);
+   const key=createHash('sha256').update(JSON.stringify([task.engine,task.state.id,kind,{target:recipe.selector||recipe.target,steps:recipe.steps,safe:recipe.safe,destructive:recipe.destructive,isolated:recipe.isolated}])).digest('hex').slice(0,16);
    let item=pending.get(key);
    if(!item){item={id:key,task,recipe,kind,cells:[]};pending.set(key,item);}
    if(!item.cells.includes(cell))item.cells.push(cell);
