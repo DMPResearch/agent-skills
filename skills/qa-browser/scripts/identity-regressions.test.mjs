@@ -20,7 +20,7 @@ async function fixture(html,check){
 
 test('named short secrets never reach pageerror message, stack, failure or saved checkpoint',{skip:!enabled},async()=>{
  const values=[['hun','ter2'].join(''),['42','4242'].join(''),['short','Tok99'].join(''),['cookie','123'].join('')];
- const message=`newPassword=${values[0]} user_password=${values[0]} otp_code=${values[1]} session=${values[3]} customAuthValue=${values[2]} accessTokenExtra=${values[2]} privateSecretValue=${values[2]}`;
+ const message=`newPassword=${values[0]} user_password=${values[0]} otp_code=${values[1]} session=${values[3]} customAuthValue=${values[2]} accessTokenExtra=${values[2]} privateSecretValue=${values[2]} authorization: Bearer ${values[2]}`;
  await fixture(`<script>setTimeout(()=>{throw Error(${JSON.stringify(message)})},10)</script>Public`,async(run,_baseURL,out)=>{
   const cell=await run({});assert.ok(cell.failures.some(f=>f.startsWith('uncaught page error')));
   for(const value of values){assert.ok(!JSON.stringify(cell).includes(value),'named secret was retained');assert.ok(!readFileSync(join(out,'checkpoint.json'),'utf8').includes(value),'checkpoint retained a named secret');}
