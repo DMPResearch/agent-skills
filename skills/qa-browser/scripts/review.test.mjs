@@ -35,6 +35,7 @@ test('real sheets review sequentially, retry once and resolve flagged screens at
    const promptPath=args.at(-1).match(/^Read (.+) and return/)[1];
    const manifest=JSON.parse(readFileSync(promptPath,'utf8').split('\n').at(-1));
    assert.equal(manifest[0].isEntry,true,'critic must receive entry-frame identity');
+   assert.match(readFileSync(promptPath,'utf8'),/isEntry:true shows the initial screen before any control or break action/);
    return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:calls===2?'inspect':'pass',failures:calls===2?['Small text requires full-size check']:[]}))})};
   }});
   const ledger=JSON.parse(readFileSync(join(out,'review-ledger.json')));assert.ok(ledger.batches.every(b=>b.frames.includes(path)));

@@ -3,7 +3,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {redact,breakKinds} from './contract.mjs';
 import {trackNavigations} from './navigation.mjs';
-import {inspect,inventory,steps,withPrototypeChrome} from './browser.mjs';
+import {inspect,inventory,steps,withPrototypeChrome,NoEffectIncompleteError} from './browser.mjs';
 
 export async function runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver}){
  const {flow,engine,theme,size,state}=t;
@@ -84,7 +84,10 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
      if(!loc.safe){cell.gaps.push('control safety undeclared: '+redact(loc.selector));continue;}
      await reset();for(const c of path)await act(c.steps);
      try{const effects=await act(loc.steps);await snap(`control-${cell.controls.length}`);cell.controls.push({selector:loc.selector,status:'pass',effects,steps:loc.steps.map(s=>({action:s.action,selector:s.selector,expected:['visible','hidden','text','url','count','value'].includes(s.action)?redact(s.env?'[environment]':s.value??s.action):undefined}))});queue.push([...path,loc]);}
-     catch{cell.failures.push('control expected effect failed: '+redact(loc.selector));cell.controls.push({selector:loc.selector,status:'fail'});}
+     catch(error){
+      if(error instanceof NoEffectIncompleteError){cell.gaps.push(error.message+': '+redact(loc.selector));cell.controls.push({selector:loc.selector,status:'incomplete'});}
+      else{cell.failures.push('control expected effect failed: '+redact(loc.selector));cell.controls.push({selector:loc.selector,status:'fail'});}
+     }
     }else if(item.tag==='a'&&item.href){
      const url=new URL(item.href,page.url());
      if(url.origin!==new URL(config.baseURL).origin){cell.gaps.push('external navigation not declared');continue;}

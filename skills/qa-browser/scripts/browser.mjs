@@ -12,12 +12,12 @@ export async function steps(page,items,root=page,target,runNavigation=operation=
   }
   switch(s.action){
    case 'file-chooser':{const event=page.waitForEvent('filechooser');try{await loc.click();await event;effects.push({type:'file-chooser',observed:true});}catch(error){event.catch(()=>{});throw error;}break;}
-   case 'no-effect':
+   case 'no-effect':effects.push(await verifyNoEffect(page,loc,root,runNavigation));break;
    case 'empty-guard':{
-    if(s.action==='empty-guard'&&(!s.input||await root.locator(s.input).evaluate(e=>e.isContentEditable?e.textContent:e.value)!==''))throw Error('empty guard requires an empty declared input');
+    if(!s.input||await root.locator(s.input).evaluate(e=>e.isContentEditable?e.textContent:e.value)!=='')throw Error('empty guard requires an empty declared input');
     const snapshot=()=>root.locator('body').evaluate(e=>JSON.stringify([e.innerHTML,[...e.querySelectorAll('input,textarea,select')].map(x=>[x.value,x.checked])]));
     const before=await snapshot(),url=page.url();let mutation=false;const onRequest=r=>{if(!['GET','HEAD','OPTIONS'].includes(r.method()))mutation=true;};page.on('request',onRequest);
-    try{await runNavigation(()=>loc.click());await page.waitForLoadState('load');await page.waitForTimeout(100);if(mutation||page.url()!==url||await snapshot()!==before)throw Error(s.action+' changed state or submitted a mutation');effects.push({type:s.action,input:s.input,...(s.action==='empty-guard'?{empty:true}:{observed:true}),unchanged:true,noMutationRequests:true});}finally{page.off('request',onRequest);}break;
+    try{await runNavigation(()=>loc.click());await page.waitForLoadState('load');await page.waitForTimeout(100);if(mutation||page.url()!==url||await snapshot()!==before)throw Error(s.action+' changed state or submitted a mutation');effects.push({type:s.action,input:s.input,empty:true,unchanged:true,noMutationRequests:true});}finally{page.off('request',onRequest);}break;
    }
    case 'click':await runNavigation(()=>loc.click());break;
    case 'double-click':await runNavigation(()=>loc.dblclick());break;
@@ -38,6 +38,37 @@ export async function steps(page,items,root=page,target,runNavigation=operation=
   }
  }
  return effects;
+}
+
+export class NoEffectIncompleteError extends Error {}
+
+async function verifyNoEffect(page,loc,root,runNavigation){
+ const snapshot=async()=>{
+  try{return await root.locator('body').evaluate(e=>{
+   const attributes=e=>[...e.attributes].map(a=>[a.name,a.value]).sort();
+   const storage=s=>Object.keys(s).sort().map(k=>[k,s.getItem(k)]);
+   return JSON.stringify([location.href,attributes(document.documentElement),attributes(e),e.innerHTML,
+    [...e.querySelectorAll('input,textarea,select')].map(x=>[x.value,x.checked]),storage(localStorage),storage(sessionStorage)]);
+  });}catch{throw new NoEffectIncompleteError('no-effect state snapshot unavailable');}
+ };
+ const before=await snapshot(),url=page.url();let mutation=false;
+ const onRequest=r=>{if(!['GET','HEAD','OPTIONS'].includes(r.method()))mutation=true;};page.on('request',onRequest);
+ try{
+  await runNavigation(async()=>{
+   await loc.click();
+   // The reproduced 400 ms handler escaped the old 100 ms observation window.
+   const deadline=Date.now()+3000,remaining=()=>Math.max(1,deadline-Date.now());
+   try{
+    await page.waitForLoadState('networkidle',{timeout:remaining()});
+    if(remaining()<750)throw Error('settle budget exhausted');
+    await page.waitForTimeout(750);
+    await page.waitForLoadState('networkidle',{timeout:remaining()});
+    if(Date.now()>deadline)throw Error('settle budget exhausted');
+   }catch{throw new NoEffectIncompleteError('no-effect did not settle within 3 seconds');}
+  });
+  if(mutation||page.url()!==url||await snapshot()!==before)throw Error('no-effect changed state or submitted a mutation');
+  return {type:'no-effect',observed:true,unchanged:true,noMutationRequests:true};
+ }finally{page.off('request',onRequest);}
 }
 
 // These checks supplement, rather than copy, verify-live's asset/image/edge checks.

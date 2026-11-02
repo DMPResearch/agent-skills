@@ -17,6 +17,9 @@ export function validate(c) {
   if(typeof f.main!=='boolean')throw Error('flow main-screen ownership required');
   if(f.states.some(s=>typeof s!=='string'&&(!s.id||!Array.isArray(s.setup))))throw Error('invalid auth/data state');
   for(const control of f.controls)if(!control.selector||!Array.isArray(control.steps)||!['visible','hidden','text','url','count','value','file-chooser','empty-guard','no-effect'].includes(control.steps.at(-1)?.action))throw Error('control requires selector and expected effect steps');
+  for(const control of f.controls)for(const [index,step]of control.steps.entries())if(step.action==='no-effect'&&(index!==control.steps.length-1||step.selector!==control.selector||step.role||step.label))throw Error('no-effect must be the final control step and use its exact CSS selector');
+  const outsideControls=[...f.steps,...f.breaks.flatMap(x=>x.steps||[]),...f.states.flatMap(x=>typeof x==='string'?[]:x.setup)];
+  if(outsideControls.some(step=>step.action==='no-effect'))throw Error('no-effect is allowed only as the final control step');
   for(const step of [...f.steps,...f.controls.flatMap(x=>x.steps),...f.breaks.flatMap(x=>x.steps||[])]){
    if(!['click','double-click','file-chooser','empty-guard','no-effect','fill','press','select','check','reload','back','forward','visible','hidden','text','url','count','value'].includes(step.action))throw Error('unknown step action');
    if(!['reload','back','forward','url'].includes(step.action)&&!step.selector)throw Error('step selector required');

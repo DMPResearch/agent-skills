@@ -50,12 +50,12 @@ test('no-change controls need observed chooser or explicit verified empty guard 
 });
 
 
-test('declared no-effect evidence must be observed, unchanged and free of mutation requests',()=>{
+test('external no-effect evidence is refused without a flow-bound declaration',()=>{
  const expected=[one],checks=['empty','invalid','double-submit','refresh','back-forward','signed-out','signed-in'].map(kind=>({kind,pass:true}));
  const edge={...one,width:390,height:660,controls:[],checks};
  const effect={type:'no-effect',observed:true,unchanged:true,noMutationRequests:true};
  const run=effects=>importCrawl({summary:{complete:true},results:[one],edges:[edge],interactions:[{...edge,changed:false,effects}]},{expected,checkFiles:false}).cells[0].functional;
- assert.equal(run([effect]),'pass');
+ assert.equal(run([effect]),'fail');
  for(const field of ['observed','unchanged','noMutationRequests'])assert.equal(run([{...effect,[field]:false}]),'fail');
  assert.equal(run([]),'fail');
 });

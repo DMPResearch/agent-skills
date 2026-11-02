@@ -41,8 +41,9 @@ export function importCrawl(data,{expected,checkFiles=true}){
   if(!edge)functionalFailures.push('no control/flow evidence supplied for this entry');
   else if(edge.controls.some(c=>!c.disabled)&&!controls.length)functionalFailures.push('no inventoried controls were exercised');
   for(const c of controls){
+   if(c.effects?.some(e=>e.type==='no-effect'))functionalFailures.push('unbound external no-effect evidence refused: '+redact(c.label||String(c.index)));
    if(c.error)functionalFailures.push('control failed: '+redact(c.label||String(c.index)));
-   else if(c.changed!==true&&c.disabled!==true&&!c.effects?.some(e=>(e.type==='file-chooser'&&e.observed===true)||(e.type==='no-effect'&&e.observed===true&&e.unchanged===true&&e.noMutationRequests===true)||(e.type==='empty-guard'&&e.input&&e.empty===true&&e.unchanged===true&&e.noMutationRequests===true)))functionalFailures.push('control has no verified state or navigation effect: '+redact(c.label||String(c.index)));
+   else if(c.changed!==true&&c.disabled!==true&&!c.effects?.some(e=>(e.type==='file-chooser'&&e.observed===true)||(e.type==='empty-guard'&&e.input&&e.empty===true&&e.unchanged===true&&e.noMutationRequests===true)))functionalFailures.push('control has no verified state or navigation effect: '+redact(c.label||String(c.index)));
   }
   if(r.failures?.some(f=>f.type==='crawl-error'))functionalFailures.push('screen traversal did not complete');
   for(const error of runtime){

@@ -54,12 +54,14 @@ test('real navigation classification requires a successful replacement during a 
 
 test('declared no-effect click verifies unchanged current-page navigation and rejects a change',{skip:!process.env.QA_PW_PATH},async()=>{
  const pw=createRequire(process.env.QA_PW_PATH)('playwright');
- for(const engine of ['chromium','webkit']){const browser=await pw[engine].launch();try{
-  const page=await browser.newPage();await page.setContent('<button id="current">Current</button>');
+ const server=createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end('<button id="current">Current</button>')});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{for(const engine of ['chromium','webkit']){const browser=await pw[engine].launch();try{
+  const page=await browser.newPage();await page.goto(`http://127.0.0.1:${server.address().port}`);
   assert.equal((await steps(page,[{action:'no-effect',selector:'#current'}]))[0].unchanged,true);
   await page.locator('#current').evaluate(e=>e.onclick=()=>e.textContent='Changed');
   await assert.rejects(steps(page,[{action:'no-effect',selector:'#current'}]),/changed state/);
- }finally{await browser.close();}}
+ }finally{await browser.close();}}}finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
 
 

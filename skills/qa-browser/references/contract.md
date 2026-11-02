@@ -216,10 +216,13 @@ approval does not imply source approval.
 
 A control whose declared outcome is no change (for example the current-page
 navigation item) can use `{action:"no-effect",selector:"#current"}` as its
-complete step. It clicks normally, waits for load and verifies unchanged URL,
-DOM and field values, with no mutation requests. A changed result fails. This
-is not a waiver for an undeclared dead control. Entry captures are identified
-by `entryFrame` in cells and `isEntry` in critic manifests and sheet captions.
-Standing providers may supply the matching observed effect
-`{type:"no-effect",observed:true,unchanged:true,noMutationRequests:true}`.
-A declaration alone or an omitted verification field never satisfies the gate.
+final control step, with the exact same CSS selector as the declared control
+(no role/label override). It clicks normally, waits for network idle and a
+750 ms settle, then verifies unchanged URL, document/body attributes, DOM,
+field values and local/session storage, with no mutation requests. Settling
+has a three-second cap; unavailable state or a busy page produces a gap.
+A changed result fails. This is not a waiver for an undeclared dead control.
+Entry captures are identified by `entryFrame` in cells and `isEntry` in critic
+manifests and sheet captions. Standing providers cannot supply no-effect
+proof because the importer cannot bind it to a declared flow control; such
+evidence is refused even when its provider claims it was observed.
