@@ -2,6 +2,7 @@ import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {redact,breakKinds} from './contract.mjs';
+import {readBody} from './body.mjs';
 import {trackNavigations} from './navigation.mjs';
 import {inspect,inventory,steps,withPrototypeChrome,NoEffectIncompleteError} from './browser.mjs';
 
@@ -41,7 +42,10 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    if(config.assetHashes&&url.origin===new URL(config.baseURL).origin&&['script','stylesheet','font'].includes(r.request().resourceType())){
     const expected=config.assetHashes[url.pathname];
     if(!expected)cell.gaps.push('served build asset absent from manifest: '+redact(url.pathname));
-    else assetChecks.push(r.body().then(body=>{if(createHash('sha256').update(body).digest('hex')!==expected)observed.push('served asset hash mismatch: '+redact(url.pathname));}).catch(()=>observed.push('served asset body unavailable')));
+    else assetChecks.push(readBody(r).then(result=>{
+     if(result.body){if(createHash('sha256').update(result.body).digest('hex')!==expected)observed.push('served asset hash mismatch: '+redact(url.pathname));}
+     else{cell.diagnostics.push({...result,flow:flow.id,state:state.id,engine,viewport:size});if(!result.navigationCancelled)observed.push('served asset body unavailable: '+result.url+'; '+result.error);}
+    }));
    }
   });
   page.on('requestfinished',r=>{const x=r.timing();if(x.responseEnd>Number(config.slowRequestMs||5000))observed.push('slow request: '+redact(r.url()));});
