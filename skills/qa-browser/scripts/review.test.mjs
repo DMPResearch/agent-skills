@@ -52,3 +52,9 @@ test('real sheets review sequentially, retry once and resolve flagged screens at
 test('invalid batch sizes are rejected before starting a review',()=>{
  for(const screensPerBatch of [0,-1,1.5,9])assert.throws(()=>reviewBatches(cells,{screensPerBatch}),/group size/);
 });
+
+test('explicit experiment sizes keep every frame and remain bounded at twenty-eight',()=>{
+ const cells=[{id:'one',screen:'preferences',engine:'chromium',theme:'dark',size:'390x660',frames:Array.from({length:70},(_,i)=>i+'.png')}];
+ for(const framesPerBatch of [7,14,28]){const batches=reviewBatches(cells,{framesPerBatch,attempts:1});assert.equal(batches.flatMap(b=>b.frames).length,70);assert.ok(batches.every(b=>b.frames.length<=framesPerBatch));}
+ assert.throws(()=>reviewBatches(cells,{framesPerBatch:29}),/batch frame size/);
+});

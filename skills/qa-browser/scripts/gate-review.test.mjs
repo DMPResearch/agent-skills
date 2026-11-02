@@ -81,3 +81,8 @@ test('review-cap exhaustion is durable and resumes without repeating completed c
  calls=0;await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return invoke(...args);}});
  assert.equal(calls,2);assert.equal(report.review.complete,true);
 }));
+
+test('one-attempt review admission never performs an automatic retry',{skip:!enabled},()=>fixture(async({report,out,browser})=>{
+ let calls=0;await runReview(report,{review:{framesPerBatch:7,attempts:1}},out,out,browser,{invoke:async()=>{calls++;return {code:124,stdout:''};}});
+ assert.equal(calls,2);assert.ok(report.review.batches.every(b=>b.attempts.length===1));assert.equal(report.review.complete,false);
+}));

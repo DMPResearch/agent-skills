@@ -4,10 +4,11 @@ import {join,basename} from 'node:path';
 import {command} from './process.mjs';
 import {redact} from './contract.mjs';
 
-export function reviewBatches(cells,{screensPerBatch=8,framesPerSheet=8,framesPerBatch=7}={}){
+export function reviewBatches(cells,{screensPerBatch=8,framesPerSheet=8,framesPerBatch=7,attempts=2}={}){
  if(!Number.isInteger(screensPerBatch)||screensPerBatch<1||screensPerBatch>8)throw Error('screen group size must be 1..8');
  if(!Number.isInteger(framesPerSheet)||framesPerSheet<1||framesPerSheet>8)throw Error('sheet size must be 1..8');
- if(!Number.isInteger(framesPerBatch)||framesPerBatch<1||framesPerBatch>7)throw Error('batch frame size must be 1..7, reserving a calibration frame');
+ if(!Number.isInteger(framesPerBatch)||framesPerBatch<1||framesPerBatch>28)throw Error('batch frame size must be 1..28, plus a calibration frame');
+ if(!Number.isInteger(attempts)||attempts<1||attempts>2)throw Error('review attempts must be 1 or 2');
  const groups=Object.groupBy(cells,c=>c.engine+'/'+c.theme),batches=[],paths=new Set();
  for(const [group,items]of Object.entries(groups)){
   let index=0;
@@ -88,6 +89,7 @@ export async function runReview(report,config,out,cwd,browser,{invoke=command}={
  report.gaps=report.gaps.filter(g=>!g.startsWith('critic batch incomplete')&&!g.startsWith('some frames lack')&&!g.startsWith('Opus quota unavailable')&&!g.startsWith('critic calibration missed')&&!g.startsWith('review budget exhausted'));
  const credentialRule=existsSync(owner)?readFileSync(owner,'utf8').split('\n').find(l=>l.startsWith('- When an agent looks for a credential'))||'':'';
  const policy=`Screenshot lane: Opus-only visual critique; independent code critique belongs to the orchestrator under cross-review. Declared prototype chrome is excluded from product judgment: ${JSON.stringify(config.prototypeChrome||[])}. Its hidden/masked regions are not product blank-space defects. A frame with isEntry:true shows the initial screen before any control or break action; judge later frames as the resulting states.
+Use rule id overlapping-controls for independent controls whose rendered rectangles overlap, reference-mismatch for differences from an approved screen, unreadable-detail for details too small to resolve, and other for other defects. Multiple rule ids are allowed.
 Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(', ')}. ${credentialRule}\nDo not edit, run commands, access accounts or services. Judge all no-slop rules: duplicated/overlapping controls, fake device chrome, clipping, images, contrast, hierarchy, template composition, generic filler. Approved references: ${(config.references||[]).join(', ')||'none supplied; do not invent an approved reference'}.`;
  report.review={identity,visualCritic:'Opus-only',codeCritic:'external cross-review required',batches:previous?.identity===identity?previous.batches.map(b=>({...b,retained:true})):[],complete:false};
  const recordBatch=entry=>{const i=report.review.batches.findIndex(b=>b.id===entry.id);if(i<0)report.review.batches.push(entry);else report.review.batches[i]=entry;};
@@ -106,7 +108,7 @@ Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(',
   const instruction=mode==='sheets'?`Read ONLY these contact sheets first: ${sheets.join(', ')}. Each caption maps to a frame below. Judge every frame. Use inspect when text/details are too small or any defect is suspected; flagged screens receive full-size follow-up.`:`Read EVERY full-size frame below. Resolve the flagged observations. Give a definite pass or fail for each; do not return inspect.`;
   writeFileSync(promptPath,`${policy}\n${instruction}\nOutput only JSON {"frames":[{"path":"exact manifest path","status":"pass|fail|inspect","rules":["specific rule id, e.g. overlapping-controls"],"failures":["specific observation"]}]}. Exactly one entry per manifest path, no omitted or extra frames.\n${JSON.stringify(manifest)}`);
   const entry={id:key,signature,mode,screens:batch.screens,frames:batch.frames.map(f=>f.path),sheets,attempts:[],status:'incomplete',canary:{status:'unrun',path:control,expectedRule:'overlapping-controls'}};recordBatch(entry);checkpoint();
-  for(let attempt=0;attempt<2;attempt++){
+  for(let attempt=0;attempt<(config.review?.attempts||2);attempt++){
    if(Date.now()>=deadline)break;
    const started=Date.now();
    const result=await invoke('claude',['-p','--model','opus','--permission-mode','dontAsk','--tools','Read','--allowedTools','Read','--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--no-session-persistence','--output-format','json','--',`Read ${promptPath} and return the required JSON after reviewing its images.`],{cwd,timeout:Math.min(config.criticTimeoutMs||600000,600000,deadline-Date.now()),env:{...process.env,CLAUDE_CONFIG_DIR:join(process.env.HOME,'.claude-b')}});
@@ -130,7 +132,7 @@ Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(',
     entry.status=judgment.status;entry.judgments=judgment.frames;checkpoint();return judgment;
    }catch(error){record.reason=redact(error.message);checkpoint();}
   }
-  report.gaps.push('critic batch incomplete after one retry: '+key);return null;
+  report.gaps.push('critic batch incomplete after '+entry.attempts.length+' attempt(s): '+key);return null;
  }
  const resolved=new Map(),flagged=new Set();
  for(const batch of batches){
