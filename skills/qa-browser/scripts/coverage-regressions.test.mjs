@@ -25,6 +25,7 @@ test('break aliases execute on the reached element and other auth scopes cannot 
   assert.ok(observations.includes('Beta'),engine+' Beta breaks ran only on Alpha');
   assert.ok(cell.controls.some(c=>c.coverageTarget==='Beta'&&c.status==='pass'));
   const wrong=await run({...flow,controls:[],breaks:breaks('Beta')});assert.ok(wrong.gaps.some(g=>g.includes('Beta')));assert.ok(!wrong.controls.some(c=>c.coverageTarget==='Beta'&&c.status==='pass'));
+  const waived=await run({...flow,controls:[],breaks:breaks('Alpha').map(b=>['empty','invalid'].includes(b.kind)?{...b,notApplicable:true,reason:'No inputs'}:b)});assert.ok(waived.gaps.some(g=>g.includes('missing empty expected outcome for Alpha')),'a visible input cannot borrow a no-input exclusion');
   const scoped=await run({...flow,controls:[],breaks:breaks('Alpha').map(b=>({...b,state:'signed-in'}))});
   assert.ok(scoped.gaps.some(g=>g.includes('Alpha')),engine+' wrong-state break hid the missing coverage');
   assert.ok(!scoped.controls.some(c=>c.tag==='input'&&c.status==='covered-by-break-contract'));

@@ -170,7 +170,7 @@ function applicableBreak(b,state){return (!b.state||b.state===state)&&(!['signed
 async function matchingBreaks(page,item,declared,state){
  const matches=[];
  for(const b of declared){
-  if(!b.target||!applicableBreak(b,state))continue;
+  if(!b.target||b.notApplicable||!applicableBreak(b,state))continue;
   if(b.coverageTarget&&!([item.name,item.id?'#'+item.id:undefined].includes(b.coverageTarget)))continue;
   if(await page.locator(b.target).evaluateAll((els,path)=>els.some(e=>e===document.querySelector(path)),item.path))matches.push(b);
  }
