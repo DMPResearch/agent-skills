@@ -48,6 +48,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
     }));
    }
   });
+  let entryBinding;
   const reset=async()=>{
    if(!await runtime.settle())throw Error('in-flight requests unresolved before replay');
    if(adapter?.reset)await adapter.reset({page,flow,state:state.id,config,pace});
@@ -55,6 +56,9 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    if(adapter?.enter)await adapter.enter({page,flow,state:state.id,pace});
    await act(state.setup||[]);
    await act(flow.steps);
+   const binding=JSON.stringify(await withPrototypeChrome(page,config.prototypeChrome,()=>inventory(surface,flow.controls.map(c=>c.selector))));
+   if(entryBinding!==undefined&&entryBinding!==binding){cell.gaps.push('entry control inventory changes between resets: dynamic accessible names or control structure');throw Error('entry cannot be replayed consistently');}
+   entryBinding=binding;
   };
   const snap=async suffix=>withPrototypeChrome(page,config.prototypeChrome,async()=>{
    cell.failures.push(...await inspect(page));
