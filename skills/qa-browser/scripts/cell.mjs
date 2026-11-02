@@ -6,24 +6,26 @@ import {readBody} from './body.mjs';
 import {trackNavigations} from './navigation.mjs';
 import {inspect,inventory,steps,withPrototypeChrome,NoEffectIncompleteError} from './browser.mjs';
 
-export async function runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver}){
+export async function runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver,sessions,terminals,pace}){
  const {flow,engine,theme,size,state}=t;
  const id=`${flow.id}-${state.id}-${engine}-${theme}-${size}`.replace(/[^a-z0-9.-]/gi,'_');
  const cell={id,screen:flow.id,state:state.id,engine,theme,size,complete:false,frames:[],failures:[],gaps:[],controls:[],repro:[`Open ${redact(new URL(flow.url,config.baseURL))}`,`Use ${engine}, ${size}, ${theme}, state ${state.id}`]};report.cells.push(cell);
  let context,cellTimer,navigation;const observed=[],assetChecks=[];
  try{
-  if(report.blockedAuthStates?.includes(state.id)){cell.gaps.push('authentication unavailable; cell not attempted');return;}
+  if(report.blockedAuthStates?.includes(state.id)||state.id==='signed-in'&&report.blockedAuthEngines?.includes(engine)){cell.gaps.push('authentication unavailable; cell not attempted');return;}
   if(!launches.has(engine))launches.set(engine,browserModule[engine].launch().then(b=>{browsers.set(engine,b);return b;}));
   const browser=await launches.get(engine);cell.browserVersion=browser.version();
   const [width,height]=size.split('x').map(Number);
-  context=await browser.newContext({viewport:{width,height},colorScheme:theme,deviceScaleFactor:1});
+  context=await browser.newContext({viewport:{width,height},colorScheme:theme,deviceScaleFactor:1,storageState:state.id==='signed-in'?sessions?.get(engine):undefined});
+  const closed=new AbortController();context.once('close',()=>closed.abort());
+  if(pace){const runPace=pace;pace=key=>runPace(key,{signal:closed.signal});}
   buildObserver?.attach(context);
   cellTimer=setTimeout(()=>{cell.gaps.push('cell exceeded 60 second cap');context.close().catch(()=>{});},Math.min(config.cellTimeoutMs||60000,60000));
   context.setDefaultTimeout(Math.min(config.actionTimeoutMs||10000,10000));
   if(config.themeInit)await context.addInitScript(config.themeInit.replaceAll('THEME',JSON.stringify(theme)));
-  if(state.id==='signed-in'&&!adapter?.authenticate)cell.gaps.push('signed-in state requires real authentication adapter');
+  if(state.id==='signed-in'&&!adapter?.authenticate&&!sessions?.has(engine))cell.gaps.push('signed-in state requires real authentication adapter');
   if(adapter?.authenticate){
-   try{await adapter.authenticate({context,state:state.id,config,flow});}
+   try{await adapter.authenticate({context,state:state.id,config,flow,pace});}
    catch{report.blockedAuthStates||=[];report.blockedAuthStates.push(state.id);cell.gaps.push('real authentication failed; later cells in this state blocked');return;}
   }
   const page=await context.newPage(),surface=flow.frame?page.frameLocator(flow.frame):page;
@@ -34,7 +36,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    cell.diagnostics.push(detail);observed.push('uncaught page error: '+detail.message);
   });
   navigation=trackNavigations(page);
-  const act=(items,target)=>steps(page,items,surface,target,navigation.run);
+  const act=(items,target)=>steps(page,items,surface,target,navigation.run,pace);
   page.on('requestfailed',r=>{const aborted=/ABORTED|cancelled|canceled/i.test(r.failure()?.errorText||'');if(!aborted)observed.push('request failed: '+redact(r.url()));});
   page.on('response',r=>{
    if(r.status()>=400)observed.push(`HTTP ${r.status()}: ${redact(r.url())}`);
@@ -50,9 +52,9 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   });
   page.on('requestfinished',r=>{const x=r.timing();if(x.responseEnd>Number(config.slowRequestMs||5000))observed.push('slow request: '+redact(r.url()));});
   const reset=async()=>{
-   if(adapter?.reset)await adapter.reset({page,flow,state:state.id,config});
+   if(adapter?.reset)await adapter.reset({page,flow,state:state.id,config,pace});
    await navigation.run(()=>page.goto(new URL(flow.url,config.baseURL).href,{waitUntil:'load'}));
-   if(adapter?.enter)await adapter.enter({page,flow,state:state.id});
+   if(adapter?.enter)await adapter.enter({page,flow,state:state.id,pace});
    await act(state.setup||[]);
    await act(flow.steps);
   };
@@ -91,6 +93,10 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
      if(seen.has(edgeKey))continue;seen.add(edgeKey);
      if(loc.destructive&&!loc.isolated){cell.gaps.push('destructive control lacks isolated real sandbox data');continue;}
      if(!loc.safe){cell.gaps.push('control safety undeclared: '+redact(loc.selector));continue;}
+     if(loc.terminal){
+      if(!terminals){cell.gaps.push('terminal phase unavailable: '+redact(loc.selector));continue;}
+      const terminal=terminals.defer(t,cell,loc,'control');cell.controls.push({selector:loc.selector,status:'deferred',scope:'engine',terminal});continue;
+     }
      await reset();for(const c of path)await act(c.steps);
      try{const effects=await act(loc.steps);await snap(`control-${cell.controls.length}`);cell.controls.push({selector:loc.selector,status:'pass',effects,steps:loc.steps.map(s=>({action:s.action,selector:s.selector,expected:['visible','hidden','text','url','count','value'].includes(s.action)?redact(s.env?'[environment]':s.value??s.action):undefined}))});queue.push([...path,loc]);}
      catch(error){
@@ -121,6 +127,10 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    const validAction=b.kind==='empty'?b.steps.some(s=>s.action==='fill'&&s.value===''):b.kind==='invalid'?b.steps.some(s=>s.action==='fill'&&(s.env||s.value)):b.kind==='double-submit'?actions.includes('double-click'):b.kind==='refresh'?actions.includes('reload'):b.kind==='back-forward'?actions.includes('back')&&actions.includes('forward'):true;
    if(!validAction){cell.gaps.push('break does not exercise '+b.kind);continue;}
    if(['signed-out','signed-in'].includes(b.kind)&&state.id!==b.kind)continue;
+   if(b.terminal){
+    if(!terminals){cell.gaps.push('terminal phase unavailable: '+b.kind);continue;}
+    const terminal=terminals.defer(t,cell,b,'break');cell.controls.push({break:b.kind,target:b.target,status:'deferred',scope:'engine',terminal});continue;
+   }
    try{await reset();if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});await act(b.steps,b.target);await snap('break-'+b.kind+'-'+breakIndex+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,status:'pass'});}
    catch{cell.failures.push('break failed: '+b.kind+' on '+redact(b.target));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,status:'fail'});cell.repro.push('Run '+b.kind+' on '+redact(b.target),...b.steps.map(s=>redact(s.action+' '+(s.selector||'page')+' '+(s.env?'[environment]':s.value??''))));}
   }

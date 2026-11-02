@@ -1,8 +1,9 @@
 import {pageChecks} from '../../verify-live/scripts/page-checks.mjs';
 
-export async function steps(page,items,root=page,target,runNavigation=operation=>operation()) {
+export async function steps(page,items,root=page,target,runNavigation=operation=>operation(),pace) {
  const effects=[];
  for(const s of items){
+  if(s.service){if(!pace)throw Error('paced service step requires a run service interval');await pace(s.service);}
   const loc=s.role?root.getByRole(s.role,{name:s.selector,exact:true}):s.label?root.getByLabel(s.selector,{exact:true}):root.locator(s.selector||'body');
   const value=s.env?process.env[s.env]:s.value;
   if(s.env&&!value)throw Error('required secret environment value unavailable');

@@ -7,6 +7,7 @@ import {createHash} from 'node:crypto';
 import {spawn,execFileSync} from 'node:child_process';
 import {validate,selectScope,matrix,redact} from './contract.mjs';
 import {observeBuild} from './provenance.mjs';
+import {prepareEngines,terminalQueue,servicePacer} from './phases.mjs';
 import {runCell} from './cell.mjs';
 import {importCrawl} from './external.mjs';
 import {command,critique,save} from './report.mjs';
@@ -104,10 +105,14 @@ try{
  if(adapter?.setup)await adapter.setup({config,root});
  const tasks=scope.flatMap(s=>matrix(s.tier).flatMap(cell=>(s.tier==='global'?s.flow.states.slice(0,1):s.flow.states).map(state=>({...s,...cell,state:typeof state==='string'?{id:state}:state}))));
  report.expectedCells=tasks.length;
+ const pace=servicePacer(config.serviceIntervals),terminals=terminalQueue();
+ const env={config,report,out,browserModule,browsers,launches,adapter,buildObserver,pace,terminals};
+ const sessions=await prepareEngines(tasks,env);env.sessions=sessions;
  let next=0;
  await Promise.all([0,1].map(async()=>{
-  while(next<tasks.length&&!stopping&&Date.now()<deadline){const t=tasks[next++];await runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver});}
+  while(next<tasks.length&&!stopping&&Date.now()<deadline){const t=tasks[next++];await runCell(t,env);}
  }));
+ if(!stopping&&Date.now()<deadline)await terminals.run(env);
  if(report.cells.length!==tasks.length)report.gaps.push(`unrun cells: ${tasks.length-report.cells.length}`);
  }
  if(!config.standingCrawl?.useResults){report.servedBuild=await buildObserver.finish();if(report.servedBuild.assets.length&&!report.build)report.build=report.servedBuild;}

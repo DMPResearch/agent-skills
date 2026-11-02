@@ -228,3 +228,35 @@ Entry captures are identified by `entryFrame` in cells and `isEntry` in critic
 manifests and sheet captions. Standing providers cannot supply no-effect
 proof because the importer cannot bind it to a declared flow control; such
 evidence is refused even when its provider claims it was observed.
+
+## Shared service entry and terminal checks
+
+An adapter may export `prepareEngine({context,engine,config,pace})`. The runner
+calls it once per selected signed-in engine, before matrix cells. Establish a
+real session and await a real protected-screen assertion there. Cookies and
+local storage are copied in memory into signed-in contexts, never written to
+artifacts. `authenticate` still installs per-context service support; with this
+hook it must reuse the session, never sign in again. Failure blocks that
+engine's signed-in cells. The 60-second entry cap is separate from cell work
+and remains inside the 30-minute capture budget.
+
+Mark an irreversible session-ending control or break `terminal:true`. It runs
+once per engine and identical declaration, after every normal matrix cell.
+The ledger names this shared scope and the cells depending on it; it does not
+claim the action was repeated at every viewport. Its actual resulting capture
+belongs to the first dependent cell. Missing terminal evidence leaves those
+cells incomplete. Different terminal recipes are distinct checks: an adapter
+must not silently reauthenticate after one revokes the shared session. Declare
+unsupported mutually exclusive terminal scenarios unrun rather than claim
+that another recipe covered them.
+
+`serviceIntervals:{"code-entry":30000}` declares the minimum admission interval
+in milliseconds for service work. A step may name `service:"code-entry"` before
+its action; adapters receive the same `await pace("code-entry")` for service
+entry work outside steps. Reservations are shared across both workers and
+engines. Choose intervals from the service's actual development limits. Place
+pacing immediately before the service operation, not arbitrary assertions.
+Cancelled cells abort their queued step waits. Pacing does not extend cell or
+capture caps; coverage that cannot finish within them stays incomplete. Use a
+standing provider when a pending service state must be reused across many
+cells without restarting the real operation.
