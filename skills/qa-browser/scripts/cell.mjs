@@ -68,21 +68,34 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   });
   await reset();await snap('entry');cell.entryFrame=cell.frames[0];
   // Replay from the entry for each edge. Contracts own safe actions and their expectations.
-  const queue=[[]],seen=new Set();let states=0;const reachedForms=new Set(),reachedInputs=new Set(),reachedControls=new Set();
+  const queue=[[]],seen=new Set(),breakPlans=[],planned=new Set();let states=0;const reachedForms=new Set(),reachedInputs=new Set(),reachedControls=new Set();
   while(queue.length){
    const path=queue.shift();await reset();for(const c of path)await act(c.steps);
    const controls=await withPrototypeChrome(page,config.prototypeChrome,()=>inventory(surface,flow.controls.map(c=>c.selector)));
    for(const target of await surface.locator('form').evaluateAll(es=>es.map((e,i)=>e.id?'#'+e.id:'form:nth-of-type('+(i+1)+')')))reachedForms.add(target);
-   const bindings=await Promise.all(controls.map(async item=>({item,loc:await matchingControl(surface,item,flow.controls),breaks:await matchingBreaks(surface,item,flow.breaks)})));
+   const bindings=await Promise.all(controls.map(async item=>({item,loc:await matchingControl(surface,item,flow.controls),breaks:await matchingBreaks(surface,item,flow.breaks,state.id)})));
    for(const item of controls.filter(c=>['input','textarea','select'].includes(c.tag)))reachedInputs.add(item.id?'#'+item.id:item.name);
-   for(const {item,breaks} of bindings)if(['input','textarea','select'].includes(item.tag))for(const b of flow.breaks.filter(b=>(b.coverageTarget||b.target)===(item.id?'#'+item.id:item.name)&&!breaks.includes(b)))cell.gaps.push('break alias does not bind input: '+redact(b.coverageTarget||b.target));
    const fingerprint=await surface.locator('body').evaluate(e=>JSON.stringify({text:e.innerText,controls:[...e.querySelectorAll('input,select,textarea,button,[role=button],[role=radio],[role=switch],a[href],summary')].map(x=>[x.id,x.type,x.checked,x.value,x.disabled,x.hidden,...['aria-pressed','aria-checked','aria-selected','aria-expanded','aria-disabled'].map(a=>x.getAttribute(a))]),dialogs:[...e.querySelectorAll('[role=dialog],dialog[open]')].map(x=>x.innerText)}));
-   const key=createHash('sha256').update(page.url()+fingerprint).digest('hex');
+   const key=createHash('sha256').update(page.url()+fingerprint+JSON.stringify(controls)).digest('hex');
    if(seen.has(key))continue;seen.add(key);states++;
    if(states>(config.maxStates||100)){cell.gaps.push('state traversal limit reached');break;}
    if(path.length)await snap(`state-${states}`);
+   for(const [index,b]of flow.breaks.entries()){
+    if(!applicableBreak(b,state.id)||!b.target||b.notApplicable)continue;
+    if(b.coverageTarget&&!bindings.some(x=>x.breaks.includes(b)))continue;
+    if(!await surface.locator(b.target).count())continue;
+    breakPlans.push({index,b,path:[...path],graphState:key,number:states});planned.add(index);
+   }
+   for(const {item,loc,breaks}of bindings){
+    const input=['input','textarea','select'].includes(item.tag),kinds=input?['empty','invalid','double-submit','refresh']:loc&&!item.disabled?['double-submit','refresh','back-forward']:[];
+    for(const kind of kinds)if(!breaks.some(b=>b.kind===kind))cell.gaps.push('missing '+kind+' expected outcome for '+redact(input?(item.id?'#'+item.id:item.name):loc.selector)+' at reached state '+states);
+   }
+   for(const target of await surface.locator('form').evaluateAll(es=>es.map((e,i)=>e.id?'#'+e.id:'form:nth-of-type('+(i+1)+')'))){
+    const bound=await matchingBreaks(surface,{path:target,tag:'form',name:target},flow.breaks,state.id);
+    for(const kind of ['empty','invalid','double-submit','refresh'])if(!bound.some(b=>b.kind===kind))cell.gaps.push('missing '+kind+' expected outcome for '+redact(target)+' at reached state '+states);
+   }
    for(const {item,loc,breaks} of bindings){
-    if(!loc&&['input','textarea','select'].includes(item.tag)&&breaks.length){cell.controls.push({tag:item.tag,status:'covered-by-break-contract'});continue;}
+    if(!loc&&['input','textarea','select'].includes(item.tag)&&breaks.length){cell.controls.push({tag:item.tag,target:item.id?'#'+item.id:item.name,breakIndices:breaks.map(b=>flow.breaks.indexOf(b)),graphState:key,status:'break-contract-pending'});continue;}
     if(item.disabled){cell.controls.push({selector:loc?.selector,tag:item.tag,status:'disabled'});continue;}
     if(loc){
      reachedControls.add(loc.selector);
@@ -112,11 +125,12 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   for(const control of flow.controls)if(!cell.controls.some(c=>c.selector===control.selector))cell.gaps.push('declared control not exercised: '+redact(control.selector));
   const required=breakKinds;
   for(const kind of required)if(!flow.breaks.some(b=>b.kind===kind))cell.gaps.push('missing break contract: '+kind);
-  for(const target of new Set([...reachedForms,...reachedInputs]))for(const kind of ['empty','invalid','double-submit','refresh'])if(!flow.breaks.some(b=>b.kind===kind&&(b.coverageTarget||b.target)===target))cell.gaps.push('missing '+kind+' expected outcome for '+redact(target));
-  for(const target of reachedControls)for(const kind of ['double-submit','refresh','back-forward'])if(!flow.breaks.some(b=>b.kind===kind&&b.target===target))cell.gaps.push('missing '+kind+' expected outcome for control '+redact(target));
   for(const auth of ['signed-out','signed-in'])if(!flow.states.some(s=>(typeof s==='string'?s:s.id)===auth))cell.gaps.push('missing real auth state: '+auth);
-  for(const [breakIndex,b] of flow.breaks.entries()){
-   if(b.state&&b.state!==state.id)continue;
+  for(const [index,b]of flow.breaks.entries()){
+   if(b.state&&b.state!==state.id){cell.controls.push({break:b.kind,index,status:'unrun',scope:b.state,reason:'declared for another auth state'});continue;}
+   if(applicableBreak(b,state.id)&&!b.notApplicable&&!planned.has(index))cell.gaps.push('break target or alias never reached: '+b.kind+' '+redact(b.coverageTarget||b.target||'[missing target]'));
+  }
+  for(const {index:breakIndex,b,path,graphState,number}of breakPlans){
    if(b.notApplicable&&b.reason&&!reachedForms.size&&!reachedInputs.size&&(b.kind!=='double-submit'||!reachedControls.size)&&['empty','invalid','double-submit'].includes(b.kind))continue;
    if(!b.safe){cell.gaps.push('break safety undeclared: '+b.kind);continue;}
    if(!['visible','hidden','text','url','count','value'].includes(b.steps?.at(-1)?.action)){cell.gaps.push('break has no expected outcome: '+b.kind);continue;}
@@ -126,11 +140,12 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    if(['signed-out','signed-in'].includes(b.kind)&&state.id!==b.kind)continue;
    if(b.terminal){
     if(!terminals){cell.gaps.push('terminal phase unavailable: '+b.kind);continue;}
-    const terminal=terminals.defer(t,cell,b,'break');cell.controls.push({break:b.kind,target:b.target,status:'deferred',scope:'engine',terminal});continue;
+    const terminal=terminals.defer(t,cell,b,'break');cell.controls.push({break:b.kind,target:b.target,index:breakIndex,graphState,status:'deferred',scope:'engine',terminal});continue;
    }
-   try{await reset();if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});await act(b.steps,b.target);await snap('break-'+b.kind+'-'+breakIndex+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,status:'pass'});}
-   catch{cell.failures.push('break failed: '+b.kind+' on '+redact(b.target));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,status:'fail'});cell.repro.push('Run '+b.kind+' on '+redact(b.target),...b.steps.map(s=>redact(s.action+' '+(s.selector||'page')+' '+(s.env?'[environment]':s.value??''))));}
+   try{await reset();for(const control of path)await act(control.steps);if(b.coverageTarget){const current=await inventory(surface);const matched=await Promise.all(current.map(async item=>(await matchingBreaks(surface,item,[b],state.id)).length));if(!matched.some(Boolean))throw Error('break alias no longer binds its reached input');}if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});await act(b.steps,b.target);await snap('break-'+b.kind+'-'+breakIndex+'-state'+number+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:'pass'});}
+   catch{cell.failures.push('break failed: '+b.kind+' on '+redact(b.target));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:'fail'});cell.repro.push('Run '+b.kind+' on '+redact(b.target),...b.steps.map(s=>redact(s.action+' '+(s.selector||'page')+' '+(s.env?'[environment]':s.value??''))));}
   }
+  for(const entry of cell.controls.filter(c=>c.status==='break-contract-pending'))entry.status=cell.controls.some(c=>c.graphState===entry.graphState&&entry.breakIndices.includes(c.index)&&['pass','fail','shared'].includes(c.status))?'covered-by-break-contract':'incomplete';
   await Promise.all(assetChecks);
   cell.failures=[...new Set(cell.failures)];cell.gaps=[...new Set(cell.gaps)];
   cell.complete=cell.gaps.length===0;
@@ -150,12 +165,13 @@ async function matchingControl(page,item,declared){
  }
 }
 
-async function matchingBreaks(page,item,declared){
+function applicableBreak(b,state){return (!b.state||b.state===state)&&(!['signed-out','signed-in'].includes(b.kind)||b.kind===state);}
+
+async function matchingBreaks(page,item,declared,state){
  const matches=[];
  for(const b of declared){
-  if(!b.target)continue;
-  const alias=b.coverageTarget||b.target;
-  if(alias!==(item.id?'#'+item.id:item.name))continue;
+  if(!b.target||!applicableBreak(b,state))continue;
+  if(b.coverageTarget&&!([item.name,item.id?'#'+item.id:undefined].includes(b.coverageTarget)))continue;
   if(await page.locator(b.target).evaluateAll((els,path)=>els.some(e=>e===document.querySelector(path)),item.path))matches.push(b);
  }
  return matches;

@@ -124,6 +124,7 @@ try{
   while(next<tasks.length&&!stopping&&Date.now()<deadline){const t=tasks[next++];await runCell(t,env);}
  }));
  if(!stopping&&Date.now()<deadline)await terminals.run(env);
+ for(const {flow}of scope)for(const [index,b]of flow.breaks.entries())if(b.state&&!b.notApplicable&&!report.cells.some(c=>c.screen===flow.id&&c.state===b.state&&c.controls.some(x=>x.index===index&&['pass','fail','shared'].includes(x.status))))report.gaps.push('declared break scope unrun: '+flow.id+' break '+index+' state '+b.state);
  if(report.cells.length!==tasks.length)report.gaps.push(`unrun cells: ${tasks.length-report.cells.length}`);
  }
  if(!config.standingCrawl?.useResults){report.servedBuild=await buildObserver.finish();if(report.servedBuild.assets.length&&!report.build)report.build=report.servedBuild;if(report.servedBuild.unreadable.length)report.gaps.push('served build bytes unverified: '+report.servedBuild.unreadable.map(redact).join(', '));}
