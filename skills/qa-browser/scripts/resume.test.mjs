@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
+import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,chmodSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
@@ -41,10 +42,21 @@ console.log(JSON.stringify({frames:manifest.map(f=>{const same=originals.has(rea
   assert.equal(readFileSync(produced,'utf8').trim().split('\n').length,1,'capture must not run on review resume');
   assert.equal(readFileSync(calls,'utf8').trim().split('\n').length,count+1,'only the failed batch reruns');
   const result=JSON.parse(readFileSync(join(out,'report.json')));assert.equal(result.review.complete,true);assert.equal(resumed.code,2,'unverified production build cannot pass');
+  const checks=join(dir,'identity-checks.txt'),cleanups=join(dir,'cleanup-count.txt'),adapter=join(dir,'build-adapter.mjs');
+  const expected=createHash('sha256').update('<html><body>Preferences</body></html>').digest('hex');
+  writeFileSync(adapter,`import {appendFileSync} from 'node:fs';import {createHash} from 'node:crypto';
+export async function buildIdentity({config}){appendFileSync(${JSON.stringify(checks)},'x');const response=await fetch(config.baseURL);const id=createHash('sha256').update(await response.text()).digest('hex');if(!response.ok||id!==${JSON.stringify(expected)})throw Error('served fixture differs');return {kind:'verified-fixture',id};}
+export async function cleanup(){appendFileSync(${JSON.stringify(cleanups)},'x');}`);
+  config.adapter=adapter;delete config.buildProbe;writeFileSync(configPath,JSON.stringify(config));
+  await run([]);assert.equal(readFileSync(checks).length,1);assert.equal(readFileSync(cleanups).length,1);
+  const verified=await run(['--resume-review']);assert.equal(verified.code,0,'buildIdentity adapter must verify served bytes during resume');
+  assert.equal(readFileSync(checks).length,2);assert.equal(readFileSync(cleanups).length,1,'resume must not repeat service cleanup');
+  assert.equal(readFileSync(produced,'utf8').trim().split('\n').length,2);
+  const finalCount=readFileSync(calls,'utf8').trim().split('\n').length;
   writeFileSync(join(source,'entry.js'),'export const name="Changed source";');
   const refused=await run(['--resume-review']);
   const stale=JSON.parse(readFileSync(join(out,'report.json')));
   assert.equal(refused.code,2);assert.equal(stale.cells.length,0);assert.ok(stale.gaps.some(g=>g.includes('matching clean source')));
-  assert.equal(readFileSync(calls,'utf8').trim().split('\n').length,count+1,'changed source cannot reuse or invoke a prior verdict');
+  assert.equal(readFileSync(calls,'utf8').trim().split('\n').length,finalCount,'changed source cannot reuse or invoke a prior verdict');
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));rmSync(dir,{recursive:true,force:true});}
 });

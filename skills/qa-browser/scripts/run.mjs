@@ -17,7 +17,7 @@ if(!args.includes('--config')){console.error('Usage: run.mjs --config /repo/qa-b
 const configPath=resolve(option('--config')),root=dirname(configPath),out=resolve(args.includes('--out')?option('--out'):join(root,'.qa-browser'));
 mkdirSync(out,{recursive:true});
 const report={version:1,status:'incomplete',started:new Date().toISOString(),cells:[],gaps:[],scope:[],sheets:[],unrun:['Independent Codex code critique belongs to orchestrator cross-review; screenshot lane is Opus-only','native Safari and Android Chrome are separate verify-live lanes']};
-let buildObserver,config,browserModule,adapter,startedServer,deadline,timer,stopping=false;
+let buildObserver,config,browserModule,adapter,buildAdapter,startedServer,deadline,timer,stopping=false;
 const stop=()=>{stopping=true;report.gaps.push('QA run cancelled; remainder unrun');for(const b of browsers.values())b.close().catch(()=>{});};
 process.once('SIGTERM',stop);process.once('SIGINT',stop);
 const browsers=new Map(), launches=new Map();
@@ -33,7 +33,7 @@ try{
  catch{report.head={kind:'unversioned',root:report.sourceRoot,observedAt:new Date().toISOString()};report.gaps.push('git head unavailable: source directory is unversioned');if(args.includes('--pr-base'))throw Error('PR mode requires a git checkout');}
  deadline=Date.now()+Math.min(config.timeoutMs||1800000,1800000);
  timer=setTimeout(()=>{report.gaps.push('30-minute run cap reached');for(const b of browsers.values())b.close().catch(()=>{});},deadline-Date.now());
- if(config.adapter&&!resumeReview)adapter=await import(pathToFileURL(resolve(root,config.adapter)));
+ if(config.adapter){buildAdapter=await import(pathToFileURL(resolve(root,config.adapter)));if(!resumeReview)adapter=buildAdapter;}
  let graph;
  if(args.includes('--pr-base')){
   const base=git('merge-base',option('--pr-base'),'HEAD');report.base=base;
@@ -68,7 +68,7 @@ try{
  }
  if(!healthy)throw Error('served app unavailable; no server restarted');
  buildObserver=observeBuild(config.baseURL);
- if(adapter?.buildIdentity)report.build=await adapter.buildIdentity({config,root});
+ if(buildAdapter?.buildIdentity)report.build=await buildAdapter.buildIdentity({config,root});
  else if(config.buildManifest){
   const manifest=json(config.buildManifest);config.assetHashes=manifest.assets;let mismatch=false;
   if(!manifest.head||manifest.head!==report.head){report.gaps.push('production manifest does not match current git head');mismatch=true;}
