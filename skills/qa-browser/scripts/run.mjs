@@ -12,8 +12,8 @@ import {runCell} from './cell.mjs';
 import {importCrawl} from './external.mjs';
 import {command,critique,save} from './report.mjs';
 
-const args=process.argv.slice(2),option=name=>args[args.indexOf(name)+1];
-if(!args.includes('--config')){console.error('Usage: run.mjs --config /repo/qa-browser.json --out /evidence [--pr-base REF]');process.exit(2);}
+const args=process.argv.slice(2),option=name=>args[args.indexOf(name)+1],resumeReview=args.includes('--resume-review');
+if(!args.includes('--config')){console.error('Usage: run.mjs --config /repo/qa-browser.json --out /evidence [--pr-base REF] [--resume-review]');process.exit(2);}
 const configPath=resolve(option('--config')),root=dirname(configPath),out=resolve(args.includes('--out')?option('--out'):join(root,'.qa-browser'));
 mkdirSync(out,{recursive:true});
 const report={version:1,status:'incomplete',started:new Date().toISOString(),cells:[],gaps:[],scope:[],sheets:[],unrun:['Independent Codex code critique belongs to orchestrator cross-review; screenshot lane is Opus-only','native Safari and Android Chrome are separate verify-live lanes']};
@@ -27,12 +27,13 @@ try{
  config=json(configPath);
  if(typeof config.flows==='string')config.flows=json(config.flows);
  validate(config);
+ report.configIdentity=createHash('sha256').update(JSON.stringify({...config,review:{...config.review,resume:undefined}})).digest('hex');
  report.sourceRoot=resolve(root,config.repoRoot||'.');
  try{report.head=git('rev-parse','HEAD');const dirty=git('status','--porcelain');if(dirty)report.gaps.push('working tree differs from recorded head');}
  catch{report.head={kind:'unversioned',root:report.sourceRoot,observedAt:new Date().toISOString()};report.gaps.push('git head unavailable: source directory is unversioned');if(args.includes('--pr-base'))throw Error('PR mode requires a git checkout');}
  deadline=Date.now()+Math.min(config.timeoutMs||1800000,1800000);
  timer=setTimeout(()=>{report.gaps.push('30-minute run cap reached');for(const b of browsers.values())b.close().catch(()=>{});},deadline-Date.now());
- if(config.adapter)adapter=await import(pathToFileURL(resolve(root,config.adapter)));
+ if(config.adapter&&!resumeReview)adapter=await import(pathToFileURL(resolve(root,config.adapter)));
  let graph;
  if(args.includes('--pr-base')){
   const base=git('merge-base',option('--pr-base'),'HEAD');report.base=base;
@@ -84,6 +85,16 @@ try{
   }
   report.gaps.push('production build identity and matching HTML/JS/CSS not verified');
  }
+ if(resumeReview){
+  const previous=json(join(out,'report.json'));
+  const buildKey=value=>typeof value==='object'?value?.id:value;
+  if(typeof report.head!=='string'||previous.head!==report.head||previous.configIdentity!==report.configIdentity||
+   previous.sourceRoot!==report.sourceRoot||buildKey(previous.build)!==buildKey(report.build)||
+   [...previous.gaps,...report.gaps].includes('working tree differs from recorded head'))throw Error('review resume requires matching clean source, config and served build identities; run a fresh capture');
+  if(!previous.cells?.length)throw Error('review resume has no prior captured cells');
+  for(const field of ['cells','expectedCells','scope','servedBuild','sharedEntry','terminalChecks','runFailures','captureProvenance','runtimeDiagnostics','unrun'])if(previous[field]!==undefined)report[field]=previous[field];
+  report.gaps.push(...previous.gaps);config.review={...config.review,resume:true};report.resumedFrom=previous.finished;
+ }else{
  if(config.standingCrawl){
   const s=config.standingCrawl;
   const captureStarted=Date.now();
@@ -116,6 +127,7 @@ try{
  if(report.cells.length!==tasks.length)report.gaps.push(`unrun cells: ${tasks.length-report.cells.length}`);
  }
  if(!config.standingCrawl?.useResults){report.servedBuild=await buildObserver.finish();if(report.servedBuild.assets.length&&!report.build)report.build=report.servedBuild;}
+ }
  clearTimeout(timer);
  const b=await browserModule.chromium.launch();
  try{

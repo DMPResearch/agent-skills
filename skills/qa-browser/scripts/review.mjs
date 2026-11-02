@@ -75,12 +75,12 @@ export async function runReview(report,config,out,cwd,browser,{invoke=command}={
  const priorPath=join(out,'review-ledger.json');
  let previous;
  if(config.review?.resume&&existsSync(priorPath))previous=JSON.parse(readFileSync(priorPath,'utf8'));
- const identity=digest(JSON.stringify({head:report.head,build:report.build,servedBuild:report.servedBuild?.id,
+ const owner=join(process.env.HOME,'.claude','AGENTS.md');
+ const identity=digest(JSON.stringify({tool:digest(readFileSync(new URL('./review.mjs',import.meta.url))),owner:evidence([owner]),head:report.head,build:typeof report.build==='object'?{kind:report.build.kind,id:report.build.id}:report.build,servedBuild:report.servedBuild?.id,
   rules:evidence(config.designRules||[]),references:evidence(config.references||[]),chrome:config.prototypeChrome||[],version:2}));
  let halted=false;
  for(const c of report.cells){delete c.critic;delete c.visualFailures;}
  report.gaps=report.gaps.filter(g=>!g.startsWith('critic batch incomplete')&&!g.startsWith('some frames lack')&&!g.startsWith('Opus quota unavailable')&&!g.startsWith('critic calibration missed'));
- const owner=join(process.env.HOME,'.claude','AGENTS.md');
  const credentialRule=existsSync(owner)?readFileSync(owner,'utf8').split('\n').find(l=>l.startsWith('- When an agent looks for a credential'))||'':'';
  const policy=`Screenshot lane: Opus-only visual critique; independent code critique belongs to the orchestrator under cross-review. Declared prototype chrome is excluded from product judgment: ${JSON.stringify(config.prototypeChrome||[])}. Its hidden/masked regions are not product blank-space defects. A frame with isEntry:true shows the initial screen before any control or break action; judge later frames as the resulting states.
 Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(', ')}. ${credentialRule}\nDo not edit, run commands, access accounts or services. Judge all no-slop rules: duplicated/overlapping controls, fake device chrome, clipping, images, contrast, hierarchy, template composition, generic filler. Approved references: ${(config.references||[]).join(', ')||'none supplied; do not invent an approved reference'}.`;
@@ -92,7 +92,7 @@ Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(',
   if(cached){
    try{const judgment=applyBatch(batch,{frames:cached.judgments});if(mode!=='sheets'&&judgment.frames.some(f=>f.status==='inspect'))throw Error('unresolved cached verdict');report.review.batches.push({...cached,reused:true});checkpoint();return judgment;}catch{}
   }
-  const control=await calibration(out,key,browser),frames=[...batch.frames,control];
+  const control={...await calibration(out,key,browser),engine:batch.frames[0].engine,theme:batch.frames[0].theme},frames=[...batch.frames,control];
   const sheets=mode==='sheets'?await renderSheets({...batch,sheets:Array.from({length:Math.ceil(frames.length/(config.review?.framesPerSheet||8))},(_,i)=>frames.slice(i*(config.review?.framesPerSheet||8),(i+1)*(config.review?.framesPerSheet||8)))},out,browser):[];
   report.sheets||=[];report.sheets.push(...sheets);
   const promptPath=join(out,key+'.prompt.md'),manifest=frames.map(f=>({path:f.path,screen:f.screen,size:f.size,isEntry:f.isEntry}));

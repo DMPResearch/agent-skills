@@ -52,7 +52,9 @@ Flows file is a nonempty array. Each flow declares:
 - `breaks`: `{kind,target,safe,steps}`. Kinds: `empty`, `invalid`, `double-submit`,
   `refresh`, `back-forward`, `signed-out`, `signed-in`. Include per-form AND
   per-input `target` selectors (`#id` preferred). For elements lacking ids, input
-  targets use the observed accessible/name text; form targets use
+  actions always use CSS targets. When the observed input has no id, declare
+  `coverageTarget` with its observed accessible/name text as an alias; it counts
+  only if the target binds that very input before traversal mutates the DOM. Form targets use
   `form:nth-of-type(N)`. Use stable ids in the app when possible. Every break
   needs an explicit expected assertion. Each declared active control also needs
   targeted double-submit, refresh and back-forward outcomes. Additional kinds cover long/RTL input,
@@ -148,9 +150,14 @@ cleanup; never invent a local bypass to make a protected screen render.
 
 ## Review budget and coverage
 
-`review:{screensPerBatch:8,framesPerSheet:8}`, `criticTimeoutMs:600000`, and
+`review:{framesPerBatch:7,framesPerSheet:8}`, `criticTimeoutMs:600000`, and
 `reviewTimeoutMs:7200000` configure sequential review. Sheet groups never mix
-engine or theme. A batch may contain multiple sheets; every frame has a caption
+engine or theme. Every batch stays within one screen and contains at most seven real frames plus
+one tool-generated overlapping-control calibration frame. This bounds the prior
+46–71-sheet workload that timed out at ten minutes to one default sheet per
+call; it does not claim a latency guarantee. The ledger measures each call.
+`framesPerBatch` may be 1..7; `framesPerSheet` 1..8. The legacy
+`screensPerBatch` setting remains accepted but cannot increase this bound. Every frame has a caption
 and an exact original path. Suspected defects and illegible details use
 `inspect`, forcing a full-size second pass for that screen's frames in the same
 engine/theme. Full-size calls must resolve `pass` or `fail`. One retry is allowed
@@ -260,3 +267,22 @@ Cancelled cells abort their queued step waits. Pacing does not extend cell or
 capture caps; coverage that cannot finish within them stays incomplete. Use a
 standing provider when a pending service state must be reused across many
 cells without restarting the real operation.
+
+## Bounded diagnostics and review resume
+
+Native page-error diagnostics retain the redacted message and stack, flow,
+state, engine and viewport. Served body reads race a committed tool navigation
+and a 2,000 ms diagnostic bound, within the existing action and cell budgets.
+A navigation cancellation records `body read cancelled by navigation` and its
+URL rather than an asset defect. An unfinished read without that correlation
+remains unreadable; completed bytes still undergo manifest hash comparison.
+Underlying body errors and URLs remain in diagnostics. No URL is whitelisted.
+
+`--resume-review` reads the prior report and review ledger from the same output
+directory, verifies source/config/build identity and current served bytes, then
+reviews the existing captures without provision, login, capture or cleanup
+replay. Successful critic batches require the same rules, references, tool
+implementation and exact frame hashes; failed batches rerun alone. A changed
+identity requires a fresh capture run. A missing calibration judgment or a
+critic that does not identify the generated overlap cannot approve its batch.
+Calibration judgments stay in the private ledger, outside screen findings.

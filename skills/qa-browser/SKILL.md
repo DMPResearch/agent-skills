@@ -25,7 +25,9 @@ server. A configured start command owns only the process it starts.
    reads a needed value into memory only immediately before use.
 2. Run `node <skill>/scripts/run.mjs --config /repo/qa-browser.json --out /evidence`.
    Playwright resolves from the target repo or its explicit `playwrightPath`;
-   nothing is installed. For PR scope append `--pr-base <base-ref>`. Export the
+   nothing is installed. Use `--resume-review` with the same config/output to
+   retry only unfinished critic work without replaying real services. Changed
+   source/build/config identities refuse that resume. For PR scope append `--pr-base <base-ref>`. Export the
    repo compiler/bundler's complete base/head graphs first as described in the
    contract. Aliases, re-exports, lazy imports and CSS belong in that graph.
    Missing ownership falls back to all main flows, with the reason recorded.
@@ -44,7 +46,10 @@ server. A configured start command owns only the process it starts.
 5. Check Claude B capacity using cross-review's rules. Review runs separately
    from the capture cap: sequential Opus calls, ten minutes each, one retry.
    Sheets contain at most eight frames, one engine/theme per sheet, grouped by
-   at most eight screens per call. Every suspected defect or unreadable detail
+   one screen per call, at most seven real frames plus a generated visual
+   calibration frame. Even a single screen is split into bounded batches. A
+   critic must identify the planted overlap in every call; a miss stops review
+   with no verdict and never becomes a real screen finding. Every suspected defect or unreadable detail
    flags that screen for a full-size second pass in chunks of eight frames.
    The screenshot lane is deliberately Opus-only. The spec's Codex second critic
    belongs to the orchestrator's independent cross-review of the product diff,
@@ -52,7 +57,8 @@ server. A configured start command owns only the process it starts.
    code findings. This runner never claims that code-review gate passed.
    Each batch records its exact frame/screen coverage and attempts in
    `review-ledger.json`; incomplete or duplicate coverage never passes. No
-   silent model fallback or paid API use. An unavailable batch after its retry
+   completed batches can be reused only with matching source/build/rules and
+   exact frame hashes. No silent model fallback or paid API use. An unavailable batch after its retry
    remains incomplete. `reviewTimeoutMs` bounds the complete review separately
    (default two hours); never reduce required coverage to fit it.
 6. Read `report.json` and `report.md`: per-screen disposition, reproduction steps,

@@ -1,0 +1,48 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {createRequire} from 'node:module';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,chmodSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
+import {command} from './process.mjs';
+import {matrix,breakKinds} from './contract.mjs';
+
+test('CLI resumes only failed review work without replaying capture or service setup',{skip:!process.env.QA_PW_PATH,timeout:30000},async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'qa-resume-')),source=join(dir,'source'),bin=join(dir,'bin'),out=join(dir,'out');mkdirSync(source);mkdirSync(bin);
+ const pw=createRequire(process.env.QA_PW_PATH)('playwright'),browser=await pw.chromium.launch();
+ const server=createServer((req,res)=>res.end('<html><body>Preferences</body></html>'));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{
+  execFileSync('git',['init','-q',source]);writeFileSync(join(source,'entry.js'),'export const name="Preferences";');execFileSync('git',['add','.'],{cwd:source});execFileSync('git',['-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','Fixture'],{cwd:source});
+  const page=await browser.newPage(),originals=new Map();
+  for(const size of new Set(matrix().map(c=>c.size))){const [width,height]=size.split('x').map(Number);await page.setViewportSize({width,height});await page.setContent('<body style="color:black;background:white"><h1>Preferences</h1></body>');const path=join(dir,size+'.png');await page.screenshot({path});originals.set(size,path);}await page.close();
+  const rows=matrix().map((c,i)=>{const path=join(dir,'frame-'+i+'.png');writeFileSync(path,readFileSync(originals.get(c.size)));return {...c,screen:'entry',path,failures:[]};});
+  const capture={summary:{complete:true},results:rows,interactions:[],edges:rows.map(r=>({screen:r.screen,engine:r.engine,theme:r.theme,size:r.size,controls:[],checks:breakKinds.map(kind=>({kind,pass:true}))}))};
+  const produced=join(dir,'produced.txt'),raw=join(dir,'capture.json'),producer=join(dir,'produce.mjs');
+  writeFileSync(producer,`import {writeFileSync,appendFileSync} from 'node:fs';appendFileSync(${JSON.stringify(produced)},'capture\\n');writeFileSync(${JSON.stringify(raw)},${JSON.stringify(JSON.stringify(capture))});`);
+  const critic=join(bin,'claude'),calls=join(dir,'calls.txt'),retryFlag=join(dir,'first-pass');
+  writeFileSync(critic,`#!/usr/bin/env node
+import {readFileSync,appendFileSync,existsSync} from 'node:fs';
+const prompt=process.argv.at(-1).match(/^Read (.+) and return/)[1],manifest=JSON.parse(readFileSync(prompt,'utf8').split('\\n').at(-1));
+appendFileSync(${JSON.stringify(calls)},prompt+'\\n');
+if(existsSync(${JSON.stringify(retryFlag)})&&prompt.includes('webkit-dark-1-sheets'))process.exit(124);
+console.log(JSON.stringify({frames:manifest.map(f=>({path:f.path,status:f.path.includes('review-check-')?'fail':'pass',failures:f.path.includes('review-check-')?['Independent buttons overlap and obscure labels']:[]}))}));
+`);chmodSync(critic,0o755);writeFileSync(retryFlag,'pending');
+  const config={version:1,repoRoot:source,baseURL:`http://127.0.0.1:${server.address().port}`,playwrightPath:process.env.QA_PW_PATH,designRules:[join(source,'entry.js')],references:[rows[0].path],buildProbe:['/'],flows:[{id:'entry',entry:'entry.js',url:'/',main:true,states:['signed-out'],steps:[],controls:[],breaks:[]}],standingCrawl:{command:[process.execPath,producer],useResults:true,report:raw}};
+  const configPath=join(dir,'config.json'),script=fileURLToPath(new URL('./run.mjs',import.meta.url));writeFileSync(configPath,JSON.stringify(config));
+  const run=flags=>command(process.execPath,[script,'--config',configPath,'--out',out,...flags],{cwd:dir,timeout:25000,env:{...process.env,PATH:bin+':'+process.env.PATH}});
+  await run([]);const first=JSON.parse(readFileSync(join(out,'report.json')));assert.equal(first.review.complete,false);
+  const count=readFileSync(calls,'utf8').trim().split('\n').length;rmSync(retryFlag);
+  const resumed=await run(['--resume-review']);
+  assert.equal(readFileSync(produced,'utf8').trim().split('\n').length,1,'capture must not run on review resume');
+  assert.equal(readFileSync(calls,'utf8').trim().split('\n').length,count+1,'only the failed batch reruns');
+  const result=JSON.parse(readFileSync(join(out,'report.json')));assert.equal(result.review.complete,true);assert.equal(resumed.code,2,'unverified production build cannot pass');
+  writeFileSync(join(source,'entry.js'),'export const name="Changed source";');
+  const refused=await run(['--resume-review']);
+  const stale=JSON.parse(readFileSync(join(out,'report.json')));
+  assert.equal(refused.code,2);assert.equal(stale.cells.length,0);assert.ok(stale.gaps.some(g=>g.includes('matching clean source')));
+  assert.equal(readFileSync(calls,'utf8').trim().split('\n').length,count+1,'changed source cannot reuse or invoke a prior verdict');
+ }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));rmSync(dir,{recursive:true,force:true});}
+});
