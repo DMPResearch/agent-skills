@@ -54,7 +54,12 @@ Flows file is a nonempty array. Each flow declares:
   per-input `target` selectors (`#id` preferred). For elements lacking ids, input
   actions always use CSS targets. When the observed input has no id, declare
   `coverageTarget` with its observed accessible/name text as an alias; it counts
-  only if the target binds that very input before traversal mutates the DOM. Form targets use
+  only if the target binds that very input before traversal mutates the DOM.
+  Accessible names participate in graph identity. Breaks replay the reached
+  graph path before binding the target and alias again; they do not reset every
+  check to the initial entry. A `state` restricts a break to that auth/data
+  state. A different state cannot borrow its coverage, and a declared scope
+  with no executed check is reported unrun. Form targets use
   `form:nth-of-type(N)`. Use stable ids in the app when possible. Every break
   needs an explicit expected assertion. Each declared active control also needs
   targeted double-submit, refresh and back-forward outcomes. Additional kinds cover long/RTL input,
@@ -78,6 +83,11 @@ use the adapter for switching sessions, never fabricated product responses.
 Trusted optional `adapter` module exports:
 
 - `setup({config,root})`: provision isolated real test data in memory.
+- `verifySession({context,state,config,flow?,engine})`: verify the active real
+  service session and return `{id:"verified subject id"}`. This is mandatory for
+  signed-in cells. Use an authenticated provider/service check, not the mere
+  presence of a cookie. The subject is compared with the shared entry in memory;
+  missing, dead or different identities leave the cell without a verdict.
 - `authenticate({context,state,config,flow})`: install an in-memory real session,
   or leave signed-out context empty. Never save storageState to disk.
 - `reset({page,flow,state,config})`: reset this cell's isolated real data before
@@ -150,15 +160,17 @@ cleanup; never invent a local bypass to make a protected screen render.
 
 ## Review budget and coverage
 
-`review:{framesPerBatch:7,framesPerSheet:8}`, `criticTimeoutMs:600000`, and
+`review:{framesPerBatch:28,framesPerSheet:8,attempts:2}`, `criticTimeoutMs:600000`, and
 `reviewTimeoutMs:7200000` configure sequential review. Sheet groups never mix
-engine or theme. Every batch stays within one screen and contains at most seven real frames plus
-one tool-generated overlapping-control calibration frame. This bounds the prior
-46–71-sheet workload that timed out at ten minutes to one default sheet per
-call; it does not claim a latency guarantee. The ledger measures each call.
-`framesPerBatch` may be 1..7; `framesPerSheet` 1..8. The legacy
-`screensPerBatch` setting remains accepted but cannot increase this bound. Every frame has a caption
-and an exact original path. Suspected defects and illegible details use
+engine or theme. Every batch stays within one screen and contains at most 28 real
+frames plus one tool-generated overlapping-control calibration frame, split
+across at most four default contact sheets. The bound follows a six-call
+production-capture pilot at 7, 14 and 28 frames; see [the measurements](batching.md).
+It does not claim a latency or reliability guarantee. The ledger measures each
+call. `framesPerBatch` may be 1..28; `framesPerSheet` 1..8. The legacy
+`screensPerBatch` setting remains accepted but cannot increase this bound.
+Every frame has a caption and an opaque critic-visible alias; the private
+ledger maps it to the exact original capture path. Suspected defects and illegible details use
 `inspect`, forcing a full-size second pass for that screen's frames in the same
 engine/theme. Full-size calls must resolve `pass` or `fail`. One retry is allowed
 for a process timeout or malformed/missing verdicts. The ledger records every
@@ -243,12 +255,18 @@ calls it once per selected signed-in engine, before matrix cells. Establish a
 real session and await a real protected-screen assertion there. Cookies and
 local storage are copied in memory into signed-in contexts, never written to
 artifacts. `authenticate` still installs per-context service support; with this
-hook it must reuse the session, never sign in again. Failure blocks that
+hook it must reuse the session, never sign in again. `verifySession` checks the
+actual active subject during shared entry and for every signed-in cell and
+terminal phase before navigation; only the verified id is retained in memory.
+Its adapter can use the context’s authenticated request client. Failure blocks that
 engine's signed-in cells. The 60-second entry cap is separate from cell work
 and remains inside the 30-minute capture budget.
 
 Mark an irreversible session-ending control or break `terminal:true`. It runs
-once per engine and identical declaration, after every normal matrix cell.
+once per engine and identical target/action/assertion/safety recipe, after every
+normal matrix cell. Flow ids, route paths and descriptive metadata do not
+duplicate the same terminal effect. HTTP, request, console and page errors
+remain observed during this phase.
 The ledger names this shared scope and the cells depending on it; it does not
 claim the action was repeated at every viewport. Its actual resulting capture
 belongs to the first dependent cell. Missing terminal evidence leaves those
@@ -274,15 +292,44 @@ Native page-error diagnostics retain the redacted message and stack, flow,
 state, engine and viewport. Served body reads race a committed tool navigation
 and a 2,000 ms diagnostic bound, within the existing action and cell budgets.
 A navigation cancellation records `body read cancelled by navigation` and its
-URL rather than an asset defect. An unfinished read without that correlation
-remains unreadable; completed bytes still undergo manifest hash comparison.
-Underlying body errors and URLs remain in diagnostics. No URL is whitelisted.
+URL rather than an asset defect. Only a real document commit supplies this
+correlation; pushState/replaceState URL changes do not. Popup and worker
+responses can be read without a frame association. An unfinished read without
+replacement is an unverified gap, never a passing or failing asset result.
+For declared assets the cell attempts one fresh authenticated GET, bounded
+to another 2,000 ms, and checks those bytes against the manifest. The original
+uncertainty remains a gap even if this retry matches; a mismatched hash still
+fails. Transport errors and HTTP errors remain failures. Underlying errors
+and URLs remain in diagnostics, with named short passwords, OTPs, tokens and
+cookies scrubbed from both message and stack. No URL is whitelisted.
 
 `--resume-review` reads the prior report and review ledger from the same output
 directory, verifies source/config/build identity and current served bytes, then
 reviews the existing captures without provision, login, capture or cleanup
-replay. Successful critic batches require the same rules, references, tool
+replay. A `buildIdentity` adapter is imported only for its read-only byte
+verification during resume; its service setup and cleanup are not repeated. Successful critic batches require the same rules, references, tool
 implementation and exact frame hashes; failed batches rerun alone. A changed
 identity requires a fresh capture run. A missing calibration judgment or a
 critic that does not identify the generated overlap cannot approve its batch.
 Calibration judgments stay in the private ledger, outside screen findings.
+Both `fail` and `inspect` with the matching structured overlap rule count as
+caught; a prose substring is not evidence of matching the expected verdict.
+
+Critic-visible images use uniformly opaque path aliases, ordinary screen/size/
+entry labels and shuffled order, including the generated calibration frame.
+The alias-to-capture mapping and calibration answer stay in the private ledger.
+Each judgment has `path`, `status`, `rules` and `failures`. Use rule id
+`overlapping-controls` when independent rendered controls overlap,
+`reference-mismatch` for differences from an approved screen,
+`unreadable-detail` for details too small to judge, and `other` for other defects.
+A calibration judgment counts as caught only with `fail` or `inspect` and the
+matching `overlapping-controls` rule. Unrelated prose does not match the
+expected verdict. Calibration observations never become screen findings.
+Product-frame full-size judgments must resolve `pass` or `fail`.
+
+The ledger retains completed receipts across quota and review-cap stops,
+including later batches not reached again before a stop. Resume validates
+every receipt against current identities and exact image bytes before using
+it. Unfinished work keeps no verdict. `review.attempts` may be 1 or 2 (default
+2); a bounded experiment may explicitly disable retries. Capacity failures
+stop without retry or model substitution.

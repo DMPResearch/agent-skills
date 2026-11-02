@@ -39,19 +39,23 @@ server. A configured start command owns only the process it starts.
 4. Traverse declared controls and reachable states, checking every actual effect
    against the flows contract. Undeclared controls/routes are coverage gaps,
    never successful clicks. Break expectations must cover each reached form and
-   input. Capture entry, control, overlay and break states; inspect every frame.
+   input. Breaks replay each reached graph state and bind aliases to the named
+   element. A signed-in cell requires the adapter’s verified active identity.
+   Capture entry, control, overlay and break states; inspect every frame.
    Existing standing crawls run through the optional external command contract,
    including their real auth and cleanup. Do not copy their product logic into
    this public skill. Their nonzero exit is a failed/incomplete check.
 5. Check Claude B capacity using cross-review's rules. Review runs separately
    from the capture cap: sequential Opus calls, ten minutes each, one retry.
    Sheets contain at most eight frames, one engine/theme per sheet, grouped by
-   one screen per call, at most seven real frames plus a generated visual
+   one screen per call, at most 28 real frames plus a generated visual
    calibration frame. Even a single screen is split into bounded batches. A
    critic must identify the planted overlap in every call; a miss stops review
    with no verdict and never becomes a real screen finding. Every suspected
    defect or unreadable detail flags that screen for a full-size second pass
-   in chunks of seven real frames plus the calibration frame.
+   in chunks of 28 real frames plus the calibration frame. See
+   [the batch-size measurements](references/batching.md) for timing, detection
+   limits and the reason for retaining broader full-size review.
    The screenshot lane is deliberately Opus-only. The spec's Codex second critic
    belongs to the orchestrator's independent cross-review of the product diff,
    where source and service contracts are available; screenshots cannot establish
@@ -60,8 +64,7 @@ server. A configured start command owns only the process it starts.
    `review-ledger.json`; incomplete or duplicate coverage never passes.
    Completed batches can be reused only with matching source/build/rules and
    exact frame hashes. No silent model fallback or paid API use. An unavailable
-   batch after its retry
-   remains incomplete. `reviewTimeoutMs` bounds the complete review separately
+   batch after its retry remains incomplete. `reviewTimeoutMs` bounds the complete review separately
    (default two hours); never reduce required coverage to fit it.
 6. Read `report.json` and `report.md`: per-screen disposition, reproduction steps,
    frame paths, control ledger, matrix, selection reasons and exclusions. Contact

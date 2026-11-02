@@ -4,7 +4,7 @@ import {join,basename} from 'node:path';
 import {command} from './process.mjs';
 import {redact} from './contract.mjs';
 
-export function reviewBatches(cells,{screensPerBatch=8,framesPerSheet=8,framesPerBatch=7,attempts=2}={}){
+export function reviewBatches(cells,{screensPerBatch=8,framesPerSheet=8,framesPerBatch=28,attempts=2}={}){
  if(!Number.isInteger(screensPerBatch)||screensPerBatch<1||screensPerBatch>8)throw Error('screen group size must be 1..8');
  if(!Number.isInteger(framesPerSheet)||framesPerSheet<1||framesPerSheet>8)throw Error('sheet size must be 1..8');
  if(!Number.isInteger(framesPerBatch)||framesPerBatch<1||framesPerBatch>28)throw Error('batch frame size must be 1..28, plus a calibration frame');
