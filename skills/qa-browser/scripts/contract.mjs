@@ -16,7 +16,7 @@ export function validate(c) {
   ids.add(f.id);
   if(typeof f.main!=='boolean')throw Error('flow main-screen ownership required');
   if(f.states.some(s=>typeof s!=='string'&&(!s.id||!Array.isArray(s.setup))))throw Error('invalid auth/data state');
-  for(const item of [...f.controls,...f.breaks])if(item.terminal!==undefined&&typeof item.terminal!=='boolean')throw Error('terminal must be boolean; it declares once-per-engine coverage');
+  for(const item of [...f.controls,...f.breaks])if(item.terminal!==undefined&&typeof item.terminal!=='boolean')throw Error('terminal must be boolean; it declares once-per-route/engine coverage');
   for(const b of f.breaks)if(b.coverageTarget!==undefined&&(typeof b.coverageTarget!=='string'||!b.coverageTarget||!b.target))throw Error('break coverageTarget needs an observed input name and CSS target');
   for(const control of f.controls)if(!control.selector||!Array.isArray(control.steps)||!['visible','hidden','text','url','count','value','file-chooser','empty-guard','no-effect'].includes(control.steps.at(-1)?.action))throw Error('control requires selector and expected effect steps');
   for(const control of f.controls)for(const [index,step]of control.steps.entries())if(step.action==='no-effect'&&(index!==control.steps.length-1||step.selector!==control.selector||step.role||step.label))throw Error('no-effect must be the final control step and use its exact CSS selector');

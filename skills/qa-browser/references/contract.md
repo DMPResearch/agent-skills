@@ -125,8 +125,11 @@ No flows file: incomplete, no invented flows. Unmapped visible controls or links
 incomplete, with observed inventory for the repo owner to extend. The crawler
 replays each safe edge from entry until no new DOM states remain. A state cap
 (default 100), cell timeout (60 s) or run timeout (30 min) preserves evidence and
-lists the remainder as incomplete. Cyclic, time-dependent states may need stable
-entry contracts to avoid repeatedly discovering changing content.
+lists the remainder as incomplete. Accessible names distinguish real graph
+states and bind aliases. If the entry inventory changes on each reset, replay
+stops with a gap naming dynamic accessible names/control structure rather than
+inventing fresh graph states until the cap. Supply a stable entry contract;
+product controls are not normalized away.
 
 
 ## Reusing an authenticated standing crawl
@@ -169,10 +172,21 @@ production-capture pilot at 7, 14 and 28 frames; see [the measurements](batching
 It does not claim a latency or reliability guarantee. The ledger measures each
 call. `framesPerBatch` may be 1..28; `framesPerSheet` 1..8. The legacy
 `screensPerBatch` setting remains accepted but cannot increase this bound.
-Every frame has a caption and an opaque critic-visible alias; the private
-ledger maps it to the exact original capture path. Suspected defects and illegible details use
-`inspect`, forcing a full-size second pass for that screen's frames in the same
-engine/theme. Full-size calls must resolve `pass` or `fail`. One retry is allowed
+Every distinct screen, declared auth/data state, engine and theme requires
+full-size reads at its shortest phone (width at most 600, smallest height) and
+widest desktop (width at least 1024, largest width). All captures from those
+boundary cells are mandatory, including reached control and break states.
+These calls run before sheets. Missing either boundary is a coverage gap;
+clean partial review cannot approve that group. Only the remaining sizes use
+sheets. No cell or frame is deduplicated or removed from the matrix.
+
+Every frame has a caption and an opaque critic-visible alias. The private
+ledger retains exact original capture paths. Suspected defects and illegible
+details use `inspect`. A failure, inspection request, nonempty rule list or
+observation from either pass forces full-size review of the remaining sizes
+of that same screen/state/engine/theme. Already completed mandatory full reads
+are not repeated. Full-size calls must resolve `pass` or `fail`. A rule counts
+even when the critic returns pass without prose. One retry is allowed
 for a process timeout or malformed/missing verdicts. The ledger records every
 attempt and covered frame. Capture's 30-minute cap does not truncate a review
 already admitted under this separate budget. No API billing or new CI lane is
@@ -263,17 +277,20 @@ engine's signed-in cells. The 60-second entry cap is separate from cell work
 and remains inside the 30-minute capture budget.
 
 Mark an irreversible session-ending control or break `terminal:true`. It runs
-once per engine and identical target/action/assertion/safety recipe, after every
-normal matrix cell. Flow ids, route paths and descriptive metadata do not
-duplicate the same terminal effect. HTTP, request, console and page errors
-remain observed during this phase.
-The ledger names this shared scope and the cells depending on it; it does not
+once per distinct route, engine, declared state and identical target/action/
+assertion/safety recipe, after every normal matrix cell. Flow ids and descriptive
+metadata do not duplicate a check on the same route; distinct routes always
+receive independent terminal runs, even with identical recipes. HTTP, request,
+console and page errors remain observed during this phase.
+The ledger names the route/engine scope and dependent cells; it does not
 claim the action was repeated at every viewport. Its actual resulting capture
 belongs to the first dependent cell. Missing terminal evidence leaves those
 cells incomplete. Different terminal recipes are distinct checks: an adapter
 must not silently reauthenticate after one revokes the shared session. Declare
 unsupported mutually exclusive terminal scenarios unrun rather than claim
-that another recipe covered them.
+that another recipe or route covered them. If the first route revokes shared
+auth, a later route must verify the session and remain unrun when it is dead.
+It cannot borrow the first route's result or sign in again silently.
 
 `serviceIntervals:{"code-entry":30000}` declares the minimum admission interval
 in milliseconds for service work. A step may name `service:"code-entry"` before
@@ -301,7 +318,16 @@ to another 2,000 ms, and checks those bytes against the manifest. The original
 uncertainty remains a gap even if this retry matches; a mismatched hash still
 fails. Transport errors and HTTP errors remain failures. Underlying errors
 and URLs remain in diagnostics, with named short passwords, OTPs, tokens and
-cookies scrubbed from both message and stack. No URL is whitelisted.
+cookies scrubbed from both message and stack. Any diagnostic key containing
+password, passwd, otp, token, secret, session or auth has its value scrubbed,
+including compound and underscored names. No URL is whitelisted.
+
+Native control, break and terminal phases drain in-flight requests before
+replay and verdict teardown. Each drain is bounded at 2,000 ms inside existing
+cell/action caps: delayed 300/1,500 ms responses are observed, while a stalled
+request cannot hold the runner indefinitely. An unresolved request records a
+gap with its method and URL. It never becomes an assumed success when the
+context closes. Terminal entry work is drained before the terminal action too.
 
 `--resume-review` reads the prior report and review ledger from the same output
 directory, verifies source/config/build identity and current served bytes, then
@@ -311,13 +337,24 @@ verification during resume; its service setup and cleanup are not repeated. Succ
 implementation and exact frame hashes; failed batches rerun alone. A changed
 identity requires a fresh capture run. A missing calibration judgment or a
 critic that does not identify the generated overlap cannot approve its batch.
-Calibration judgments stay in the private ledger, outside screen findings.
+Calibration status stays in the private ledger, outside screen findings.
 Both `fail` and `inspect` with the matching structured overlap rule count as
 caught; a prose substring is not evidence of matching the expected verdict.
 
 Critic-visible images use uniformly opaque path aliases, ordinary screen/size/
 entry labels and shuffled order, including the generated calibration frame.
-The alias-to-capture mapping and calibration answer stay in the private ledger.
+The calibration answer path exists only in the runner's memory; it is never
+written to a file the critic can Read. The ledger records caught/missed status
+and expected rule, without identifying the planted image. Each batch needs its
+own successful calibration, including split children.
+
+When a batch repeatedly times out, use `--resume-review --split-timed-out`.
+Only previously timed-out batches split in half, preserving all exact frame
+coverage and completed sibling receipts. Each child receives its own
+calibration. Further explicit resumes can split timed-out children larger than
+seven frames; seven or fewer remain incomplete when they time out. The flag
+does not change the source/build/config identity or raise a deadline. Completed
+calls survive quota stops and the two-hour cap.
 Each judgment has `path`, `status`, `rules` and `failures`. Use rule id
 `overlapping-controls` when independent rendered controls overlap,
 `reference-mismatch` for differences from an approved screen,

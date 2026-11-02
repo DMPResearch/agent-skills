@@ -26,7 +26,9 @@ server. A configured start command owns only the process it starts.
 2. Run `node <skill>/scripts/run.mjs --config /repo/qa-browser.json --out /evidence`.
    Playwright resolves from the target repo or its explicit `playwrightPath`;
    nothing is installed. Use `--resume-review` with the same config/output to
-   retry only unfinished critic work without replaying real services. Changed
+   retry only unfinished critic work without replaying real services. Add
+   `--split-timed-out` on resume to split timed-out batches while retaining
+   completed receipts. Changed
    source/build/config identities refuse that resume. For PR scope append `--pr-base <base-ref>`. Export the
    repo compiler/bundler's complete base/head graphs first as described in the
    contract. Aliases, re-exports, lazy imports and CSS belong in that graph.
@@ -47,13 +49,17 @@ server. A configured start command owns only the process it starts.
    this public skill. Their nonzero exit is a failed/incomplete check.
 5. Check Claude B capacity using cross-review's rules. Review runs separately
    from the capture cap: sequential Opus calls, ten minutes each, one retry.
-   Sheets contain at most eight frames, one engine/theme per sheet, grouped by
-   one screen per call, at most 28 real frames plus a generated visual
+   First read every frame at the shortest phone and widest desktop for each
+   screen, declared auth/data state, engine and theme at full size. Missing
+   either boundary leaves that group without a passing verdict. Only other
+   sizes use sheets, with at most eight frames per sheet. Calls stay within
+   one screen/engine/theme, at most 28 real frames plus a generated visual
    calibration frame. Even a single screen is split into bounded batches. A
    critic must identify the planted overlap in every call; a miss stops review
    with no verdict and never becomes a real screen finding. Every suspected
-   defect or unreadable detail flags that screen for a full-size second pass
-   in chunks of 28 real frames plus the calibration frame. See
+   defect, rule or unreadable detail flags the remaining sizes of that same
+   screen/state/engine/theme for full-size reads, in chunks of 28 real frames
+   plus calibration. Mandatory full reads are not repeated. See
    [the batch-size measurements](references/batching.md) for timing, detection
    limits and the reason for retaining broader full-size review.
    The screenshot lane is deliberately Opus-only. The spec's Codex second critic
@@ -68,7 +74,8 @@ server. A configured start command owns only the process it starts.
    (default two hours); never reduce required coverage to fit it.
 6. Read `report.json` and `report.md`: per-screen disposition, reproduction steps,
    frame paths, control ledger, matrix, selection reasons and exclusions. Contact
-   sheets cover the first pass; flagged screens require full-size follow-up. A screen passes
+   sheets cover remaining sizes after mandatory full reads; flagged states require
+   full-size follow-up. A screen passes
    only with complete functional checks and passing critique. Exit 0 is pass,
    1 confirmed failure, 2 incomplete/no verdict. Keep evidence private and mask
    account artifacts before sharing. Report defects; do not waive or fix them.
