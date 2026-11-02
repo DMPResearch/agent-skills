@@ -27,6 +27,7 @@ try{
  config=json(configPath);
  if(typeof config.flows==='string')config.flows=json(config.flows);
  validate(config);
+ if(args.includes('--split-timed-out')&&!resumeReview)throw Error('--split-timed-out requires --resume-review');
  report.configIdentity=createHash('sha256').update(JSON.stringify({...config,review:{...config.review,resume:undefined}})).digest('hex');
  report.sourceRoot=resolve(root,config.repoRoot||'.');
  try{report.head=git('rev-parse','HEAD');const dirty=git('status','--porcelain');if(dirty)report.gaps.push('working tree differs from recorded head');}
@@ -93,7 +94,7 @@ try{
    [...previous.gaps,...report.gaps].includes('working tree differs from recorded head'))throw Error('review resume requires matching clean source, config and served build identities; run a fresh capture');
   if(!previous.cells?.length)throw Error('review resume has no prior captured cells');
   for(const field of ['cells','expectedCells','scope','servedBuild','sharedEntry','terminalChecks','runFailures','captureProvenance','runtimeDiagnostics','unrun'])if(previous[field]!==undefined)report[field]=previous[field];
-  report.gaps.push(...previous.gaps);config.review={...config.review,resume:true};report.resumedFrom=previous.finished;
+  report.gaps.push(...previous.gaps);config.review={...config.review,resume:true,splitTimedOut:args.includes('--split-timed-out')};report.resumedFrom=previous.finished;
  }else{
  if(config.standingCrawl){
   const s=config.standingCrawl;

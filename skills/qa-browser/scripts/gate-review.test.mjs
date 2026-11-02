@@ -11,8 +11,11 @@ async function fixture(check){
  const pw=createRequire(process.env.QA_PW_PATH)('playwright'),browser=await pw.chromium.launch(),out=mkdtempSync(join(tmpdir(),'qa-review-gate-'));
  try{
   const page=await browser.newPage({viewport:{width:390,height:660}});await page.setContent('<html style="background:white;color:black"><body><h1>Preferences</h1></body></html>');
-  const paths=[];for(let i=0;i<9;i++){const path=join(out,`frame-${i}.png`);await page.screenshot({path});paths.push(path);}await page.close();
-  const report={head:'fixture-head',build:'fixture-build',cells:[{id:'one',screen:'preferences',engine:'chromium',theme:'light',size:'390x660',frames:paths,entryFrame:paths[0],complete:true,failures:[],gaps:[]}],gaps:[],sheets:[]};
+  const paths=[];for(let i=0;i<9;i++){const path=join(out,`frame-${i}.png`);await page.screenshot({path});paths.push(path);}
+  const cells=[{id:'one',screen:'preferences',state:'base',engine:'chromium',theme:'light',size:'390x660',frames:[...paths],entryFrame:paths[0],complete:true,failures:[],gaps:[]}];
+  for(const size of ['820x1180','1440x900']){const [width,height]=size.split('x').map(Number);await page.setViewportSize({width,height});const path=join(out,size+'.png');await page.screenshot({path});paths.push(path);cells.push({...cells[0],id:size,size,frames:[path],entryFrame:path,failures:[],gaps:[]});}
+  await page.close();
+  const report={head:'fixture-head',build:'fixture-build',cells,gaps:[],sheets:[]};
   const manifests=[];
   const invoke=async(file,args)=>{
    const prompt=args.at(-1).match(/^Read (.+) and return/)[1],manifest=JSON.parse(readFileSync(prompt,'utf8').split('\n').at(-1));manifests.push(manifest);
@@ -53,14 +56,14 @@ test('resume reruns only failed batches and rejects changed frame identity',{ski
  let calls=0;
  const config={review:{resume:true,framesPerBatch:7}};
  await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return calls===2||calls===3?{code:124,stdout:''}:invoke(...args);}});
- assert.equal(report.review.complete,false);assert.equal(calls,3);
+ assert.equal(report.review.complete,false);assert.equal(calls,4);
  calls=0;await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return invoke(...args);}});
  assert.equal(calls,1);assert.equal(report.review.complete,true);
  writeFileSync(paths[0],readFileSync(paths[1]));
  // Changing identity must invalidate reuse even if the pathname is unchanged.
  report.build='different-build';calls=0;
  await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return invoke(...args);}});
- assert.equal(calls,2);
+ assert.equal(calls,3);
 }));
 
 test('quota on a changed first batch preserves later completed receipts for resume',{skip:!enabled},()=>fixture(async({report,out,browser,invoke,paths})=>{
@@ -69,7 +72,7 @@ test('quota on a changed first batch preserves later completed receipts for resu
  writeFileSync(paths[0],Buffer.concat([readFileSync(paths[0]),Buffer.from([0])]));
  await runReview(report,config,out,out,browser,{invoke:async()=>({code:1,stdout:'',stderr:'usage limit reached'})});
  const ledger=JSON.parse(readFileSync(join(out,'review-ledger.json')));
- assert.equal(ledger.batches.filter(b=>b.status==='pass'&&b.judgments).length,2);
+ assert.equal(ledger.batches.filter(b=>b.status==='pass'&&b.judgments).length,4);
  let calls=0;await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return invoke(...args);}});
  assert.equal(calls,1);assert.equal(report.review.complete,true);
 }));
@@ -79,12 +82,12 @@ test('review-cap exhaustion is durable and resumes without repeating completed c
  await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;await new Promise(r=>setTimeout(r,5100));return invoke(...args);}});
  assert.equal(calls,1);assert.equal(report.review.complete,false);assert.ok(report.gaps.some(g=>g.includes('review budget exhausted')));
  calls=0;await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return invoke(...args);}});
- assert.equal(calls,2);assert.equal(report.review.complete,true);
+ assert.equal(calls,4);assert.equal(report.review.complete,true);
 }));
 
 test('one-attempt review admission never performs an automatic retry',{skip:!enabled},()=>fixture(async({report,out,browser})=>{
  let calls=0;await runReview(report,{review:{framesPerBatch:7,attempts:1}},out,out,browser,{invoke:async()=>{calls++;return {code:124,stdout:''};}});
- assert.equal(calls,2);assert.ok(report.review.batches.every(b=>b.attempts.length===1));assert.equal(report.review.complete,false);
+ assert.equal(calls,3);assert.ok(report.review.batches.every(b=>b.attempts.length===1));assert.equal(report.review.complete,false);
 }));
 
 test('invalid saved review evidence cannot leave an earlier passing critic visible',{skip:!enabled},()=>fixture(async({report,out,browser})=>{
@@ -92,4 +95,22 @@ test('invalid saved review evidence cannot leave an earlier passing critic visib
  writeFileSync(join(out,'review-ledger.json'),'{invalid');
  await assert.rejects(runReview(report,{review:{resume:true}},out,out,browser));
  assert.equal(report.cells[0].critic,undefined);assert.equal(report.cells[0].visualFailures,undefined);assert.equal(report.review,undefined);
+}));
+
+test('explicit resume splitting retries only the timed-out batch in smaller children',{skip:!enabled},()=>fixture(async({report,out,browser,invoke})=>{
+ const config={review:{framesPerBatch:28,attempts:1,resume:true}};
+ await runReview(report,config,out,out,browser,{invoke:async(file,args)=>args.at(-1).includes('-mandatory-')?{code:124,stdout:''}:invoke(file,args)});
+ assert.equal(report.review.complete,false);let calls=0;
+ await runReview(report,{review:{...config.review,splitTimedOut:true}},out,out,browser,{invoke:async(file,args)=>{
+  calls++;const path=args.at(-1).match(/^Read (.+) and return/)[1],manifest=JSON.parse(readFileSync(path,'utf8').split('\n').at(-1));assert.ok(manifest.length<=8,'timed-out mandatory work must split, keeping its calibration');return invoke(file,args);
+ }});
+ assert.equal(calls,2);assert.equal(report.review.complete,true);
+}));
+
+test('the critic cannot read a persisted calibration answer from the ledger',{skip:!enabled},()=>fixture(async({report,out,browser})=>{
+ await runReview(report,{},out,out,browser,{invoke:async(file,args)=>{
+  const ledger=JSON.parse(readFileSync(join(out,'review-ledger.json'))),leaked=new Set(ledger.batches.map(b=>b.canary?.path).filter(Boolean));assert.equal(leaked.size,0);
+  const prompt=args.at(-1).match(/^Read (.+) and return/)[1],manifest=JSON.parse(readFileSync(prompt,'utf8').split('\n').at(-1));return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:'pass',rules:[],failures:[]}))})};
+ }});
+ assert.equal(report.review.complete,false);
 }));

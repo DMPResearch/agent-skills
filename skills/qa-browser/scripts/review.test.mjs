@@ -25,8 +25,9 @@ test('real sheets review sequentially, retry once and resolve flagged screens at
  const pw=createRequire(process.env.QA_PW_PATH)('playwright'),browser=await pw.chromium.launch(),out=mkdtempSync(join(tmpdir(),'qa-review-'));
  try{
   const page=await browser.newPage({viewport:{width:390,height:660}});await page.setContent('<h1>Settings</h1>');
-  const path=join(out,'frame.png');await page.screenshot({path});await page.close();
-  const report={cells:[{id:'one',screen:'settings',engine:'chromium',theme:'light',size:'390x660',frames:[path],entryFrame:path,failures:[],gaps:[],complete:true}],gaps:[],sheets:[]};
+  const path=join(out,'frame.png');await page.screenshot({path});const realPaths=[path],cells=[{id:'one',screen:'settings',state:'base',engine:'chromium',theme:'light',size:'390x660',frames:[path],entryFrame:path,failures:[],gaps:[],complete:true}];
+  for(const size of ['820x1180','1440x900']){const [width,height]=size.split('x').map(Number);await page.setViewportSize({width,height});const extra=join(out,size+'.png');await page.screenshot({path:extra});realPaths.push(extra);cells.push({...cells[0],id:size,size,frames:[extra],entryFrame:extra,failures:[],gaps:[]});}await page.close();
+  const report={cells,gaps:[],sheets:[]};
   let calls=0,active=0;
   await runReview(report,{designRules:['AGENTS.md']},out,out,browser,{invoke:async(file,args)=>{
    active++;assert.equal(active,1);calls++;
@@ -34,14 +35,14 @@ test('real sheets review sequentially, retry once and resolve flagged screens at
    if(calls===1)return {code:124,stdout:''};
    const promptPath=args.at(-1).match(/^Read (.+) and return/)[1];
    const manifest=JSON.parse(readFileSync(promptPath,'utf8').split('\n').at(-1));
-   assert.equal(manifest.find(f=>readFileSync(f.path).equals(readFileSync(path))).isEntry,true,'critic must receive entry-frame identity');
+   assert.equal(manifest.find(f=>realPaths.some(p=>readFileSync(f.path).equals(readFileSync(p)))).isEntry,true,'critic must receive entry-frame identity');
    assert.match(readFileSync(promptPath,'utf8'),/isEntry:true shows the initial screen before any control or break action/);
-   return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:readFileSync(f.path).equals(readFileSync(path))?(calls===2?'inspect':'pass'):'fail',rules:readFileSync(f.path).equals(readFileSync(path))?[]:['overlapping-controls'],failures:readFileSync(f.path).equals(readFileSync(path))?(calls===2?['Small text requires full-size check']:[]):['Independent controls overlap and obscure labels']}))})};
+   return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:realPaths.some(p=>readFileSync(f.path).equals(readFileSync(p)))?(promptPath.includes('-sheets')?'inspect':'pass'):'fail',rules:realPaths.some(p=>readFileSync(f.path).equals(readFileSync(p)))?[]:['overlapping-controls'],failures:realPaths.some(p=>readFileSync(f.path).equals(readFileSync(p)))?(promptPath.includes('-sheets')?['Small text requires full-size check']:[]):['Independent controls overlap and obscure labels']}))})};
   }});
-  const ledger=JSON.parse(readFileSync(join(out,'review-ledger.json')));assert.ok(ledger.batches.every(b=>b.frames.includes(path)));
+  const ledger=JSON.parse(readFileSync(join(out,'review-ledger.json')));assert.ok(ledger.batches.some(b=>b.frames.includes(path)));assert.ok(ledger.batches.every(b=>b.frames.every(p=>realPaths.includes(p))));
   assert.ok(ledger.batches.every(b=>b.canary.status==='caught'));
-  assert.equal(calls,3);assert.equal(report.review.complete,true);assert.equal(report.cells[0].critic,'pass');
-  assert.equal(report.review.batches[0].attempts.length,2);assert.equal(report.review.batches[1].mode,'full');
+  assert.equal(calls,4);assert.equal(report.review.complete,true);assert.equal(report.cells[0].critic,'pass');
+  assert.equal(report.review.batches[0].attempts.length,2);assert.equal(report.review.batches.at(-1).mode,'full');
   let quotaCalls=0;
   await runReview(report,{designRules:['AGENTS.md']},out,out,browser,{invoke:async()=>{quotaCalls++;return {code:1,stdout:'',stderr:'Usage limit reached; rate_limit_error'}}});
   assert.equal(quotaCalls,1);assert.equal(report.review.complete,false);assert.equal(report.cells[0].critic,undefined);
