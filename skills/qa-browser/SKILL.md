@@ -49,16 +49,18 @@ server. A configured start command owns only the process it starts.
    one screen per call, at most seven real frames plus a generated visual
    calibration frame. Even a single screen is split into bounded batches. A
    critic must identify the planted overlap in every call; a miss stops review
-   with no verdict and never becomes a real screen finding. Every suspected defect or unreadable detail
-   flags that screen for a full-size second pass in chunks of eight frames.
+   with no verdict and never becomes a real screen finding. Every suspected
+   defect or unreadable detail flags that screen for a full-size second pass
+   in chunks of seven real frames plus the calibration frame.
    The screenshot lane is deliberately Opus-only. The spec's Codex second critic
    belongs to the orchestrator's independent cross-review of the product diff,
    where source and service contracts are available; screenshots cannot establish
    code findings. This runner never claims that code-review gate passed.
    Each batch records its exact frame/screen coverage and attempts in
-   `review-ledger.json`; incomplete or duplicate coverage never passes. No
-   completed batches can be reused only with matching source/build/rules and
-   exact frame hashes. No silent model fallback or paid API use. An unavailable batch after its retry
+   `review-ledger.json`; incomplete or duplicate coverage never passes.
+   Completed batches can be reused only with matching source/build/rules and
+   exact frame hashes. No silent model fallback or paid API use. An unavailable
+   batch after its retry
    remains incomplete. `reviewTimeoutMs` bounds the complete review separately
    (default two hours); never reduce required coverage to fit it.
 6. Read `report.json` and `report.md`: per-screen disposition, reproduction steps,
