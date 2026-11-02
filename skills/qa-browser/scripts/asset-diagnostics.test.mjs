@@ -70,3 +70,17 @@ test('an unfinished body without a declared replacement remains unreadable at th
   }finally{await context.close();}
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
+
+test('a timed-out original body gets one bounded fresh read and keeps its unverifiable status',{skip:!enabled,timeout:8000},async()=>{
+ const {readBody}=await import('./body.mjs');let requests=0;
+ const server=createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/javascript'});if(++requests===1)res.write('window.value=');else res.end('window.value="changed"');});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const pw=createRequire(process.env.QA_PW_PATH)('playwright'),browser=await pw.chromium.launch();
+ try{
+  const context=await browser.newContext(),page=await context.newPage(),url=`http://127.0.0.1:${server.address().port}/asset.js`;
+  const response=await page.goto(url,{waitUntil:'commit'});
+  const result=await bounded(readBody(response,{retry:async()=>{const fresh=await context.request.get(url,{timeout:2000,maxRetries:0});return fresh.body();}}),4500);
+  assert.equal(result.reason,'body read timed out');assert.equal(result.recovered,true);assert.equal(requests,2);
+  assert.match(result.body.toString(),/changed/);assert.equal(result.navigationCancelled,false);
+ }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
+});

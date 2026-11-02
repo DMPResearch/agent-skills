@@ -44,9 +44,9 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    if(config.assetHashes&&url.origin===new URL(config.baseURL).origin&&['script','stylesheet','font'].includes(r.request().resourceType())){
     const expected=config.assetHashes[url.pathname];
     if(!expected)cell.gaps.push('served build asset absent from manifest: '+redact(url.pathname));
-    else assetChecks.push(readBody(r).then(result=>{
+    else assetChecks.push(readBody(r,{retry:async()=>{const fresh=await context.request.get(r.url(),{timeout:2000,maxRetries:0});if(!fresh.ok())throw Error('fresh asset request HTTP '+fresh.status());return fresh.body();}}).then(result=>{
+     if(result.reason){cell.diagnostics.push({...result,body:undefined,flow:flow.id,state:state.id,engine,viewport:size});if(!result.navigationCancelled)cell.gaps.push('served asset body unverified: '+result.url+'; '+result.error);}
      if(result.body){if(createHash('sha256').update(result.body).digest('hex')!==expected)observed.push('served asset hash mismatch: '+redact(url.pathname));}
-     else{cell.diagnostics.push({...result,flow:flow.id,state:state.id,engine,viewport:size});if(!result.navigationCancelled)observed.push('served asset body unavailable: '+result.url+'; '+result.error);}
     }));
    }
   });

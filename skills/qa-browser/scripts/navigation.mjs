@@ -16,10 +16,13 @@ export function trackNavigations(page){
   pending.add(r);latest.set(frame,r);
  });
  page.on('framenavigated',frame=>{
-  const r=latest.get(frame);if(r&&r.url()===frame.url())committed.add(r);
-  const scope=scopes.at(-1);
+  const r=latest.get(frame),scope=scopes.at(-1);
+  const newDocument=r&&!committed.has(r)&&r.url()===frame.url();
+  const historyBlank=scope?.history&&frame===page.mainFrame()&&frame.url()==='about:blank'&&r?.url()!=='about:blank';
+  if(!newDocument&&!historyBlank)return;
+  if(newDocument)committed.add(r);
   const generation=(generations.get(frame)||0)+1;generations.set(frame,generation);
-  if(scope&&(scope.requests.has(r)||scope.history))for(const [request,record]of resources){
+  if(scope&&(newDocument&&scope.requests.has(r)||historyBlank))for(const [request,record]of resources){
    if(request===r||record.frame!==frame||record.generation>=generation||record.replacement)continue;
    record.replacement=frame.url();
    for(const callback of listeners.get(request)||[])callback(record.replacement);
@@ -34,7 +37,7 @@ export function trackNavigations(page){
  const tracker={
   bodyReplacementPending(request){
    const frame=resources.get(request)?.frame;
-   return scopes.some(scope=>scope.history||[...scope.requests].some(r=>r!==request&&r.frame()===frame));
+   return scopes.some(scope=>[...scope.requests].some(r=>r!==request&&!committed.has(r)&&r.frame()===frame));
   },
   onBodyReplacement(request,callback){
    const record=resources.get(request);

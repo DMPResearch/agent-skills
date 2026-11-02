@@ -126,7 +126,7 @@ try{
  if(!stopping&&Date.now()<deadline)await terminals.run(env);
  if(report.cells.length!==tasks.length)report.gaps.push(`unrun cells: ${tasks.length-report.cells.length}`);
  }
- if(!config.standingCrawl?.useResults){report.servedBuild=await buildObserver.finish();if(report.servedBuild.assets.length&&!report.build)report.build=report.servedBuild;}
+ if(!config.standingCrawl?.useResults){report.servedBuild=await buildObserver.finish();if(report.servedBuild.assets.length&&!report.build)report.build=report.servedBuild;if(report.servedBuild.unreadable.length)report.gaps.push('served build bytes unverified: '+report.servedBuild.unreadable.map(redact).join(', '));}
  }
  clearTimeout(timer);
  const b=await browserModule.chromium.launch();
