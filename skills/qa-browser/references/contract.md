@@ -214,13 +214,15 @@ Codex code critique runs through the orchestrator's cross-review with the actual
 product diff and contracts. It remains explicitly unrun by this CLI; visual
 approval does not imply source approval.
 
-A control whose declared outcome is no change (for example the current-page
-navigation item) can use `{action:"no-effect",selector:"#current"}` as its
+A control whose declared outcome is no change (for example a non-navigating
+current-page item) can use `{action:"no-effect",selector:"#current"}` as its
 final control step, with the exact same CSS selector as the declared control
-(no role/label override). It clicks normally, waits for network idle and a
-750 ms settle, then verifies unchanged URL, document/body attributes, DOM,
-field values and local/session storage, with no mutation requests. Settling
-has a three-second cap; unavailable state or a busy page produces a gap.
+(no role/label override). It clicks normally and polls through a three-second
+cap, requiring network idle and 750 ms of stable state; it verifies URL, title, document/body attributes,
+DOM, open shadow roots, fields, cookies, local/session storage, page count and
+navigation signals, with no mutation requests. Unavailable state or a page
+that never settles produces a gap. Changes later than the cap are not detected,
+and injected style, scroll, focus and canvas changes are acceptable misses.
 A changed result fails. This is not a waiver for an undeclared dead control.
 Entry captures are identified by `entryFrame` in cells and `isEntry` in critic
 manifests and sheet captions. Standing providers cannot supply no-effect

@@ -43,32 +43,43 @@ export async function steps(page,items,root=page,target,runNavigation=operation=
 export class NoEffectIncompleteError extends Error {}
 
 async function verifyNoEffect(page,loc,root,runNavigation){
- const snapshot=async()=>{
-  try{return await root.locator('body').evaluate(e=>{
-   const attributes=e=>[...e.attributes].map(a=>[a.name,a.value]).sort();
-   const storage=s=>Object.keys(s).sort().map(k=>[k,s.getItem(k)]);
-   return JSON.stringify([location.href,attributes(document.documentElement),attributes(e),e.innerHTML,
-    [...e.querySelectorAll('input,textarea,select')].map(x=>[x.value,x.checked]),storage(localStorage),storage(sessionStorage)]);
-  });}catch{throw new NoEffectIncompleteError('no-effect state snapshot unavailable');}
+ let mutation=false,navigations=0,popups=0;
+ const context=page.context(),snapshot=async()=>{
+  try{
+   const state=await root.locator('body').evaluate(e=>{
+    const attributes=e=>[...e.attributes].map(a=>[a.name,a.value]).sort();
+    const storage=s=>Object.keys(s).sort().map(k=>[k,s.getItem(k)]);
+    const shadows=root=>[...root.querySelectorAll('*')].filter(e=>e.shadowRoot).map(e=>[
+     e.shadowRoot.innerHTML,[...e.shadowRoot.querySelectorAll('input,textarea,select')].map(x=>[x.value,x.checked]),shadows(e.shadowRoot)]);
+    return [location.href,document.title,document.cookie,attributes(document.documentElement),attributes(e),e.innerHTML,
+     [...e.querySelectorAll('input,textarea,select')].map(x=>[x.value,x.checked]),storage(localStorage),storage(sessionStorage),shadows(document)];
+   });
+   return JSON.stringify([state,page.url(),context.pages().length,mutation,navigations,popups]);
+  }catch{throw new NoEffectIncompleteError('no-effect state snapshot unavailable');}
  };
- const before=await snapshot(),url=page.url();let mutation=false;
- const onRequest=r=>{if(!['GET','HEAD','OPTIONS'].includes(r.method()))mutation=true;};page.on('request',onRequest);
+ const before=await snapshot();
+ const onRequest=r=>{if(!['GET','HEAD','OPTIONS'].includes(r.method()))mutation=true;};
+ const onNavigation=()=>navigations++,onPage=()=>popups++;
+ page.on('request',onRequest);page.on('framenavigated',onNavigation);context.on('page',onPage);
  try{
+  let changed=false;
   await runNavigation(async()=>{
    await loc.click();
-   // The reproduced 400 ms handler escaped the old 100 ms observation window.
    const deadline=Date.now()+3000,remaining=()=>Math.max(1,deadline-Date.now());
-   try{
-    await page.waitForLoadState('networkidle',{timeout:remaining()});
-    if(remaining()<750)throw Error('settle budget exhausted');
-    await page.waitForTimeout(750);
-    await page.waitForLoadState('networkidle',{timeout:remaining()});
-    if(Date.now()>deadline)throw Error('settle budget exhausted');
-   }catch{throw new NoEffectIncompleteError('no-effect did not settle within 3 seconds');}
+   let previous=before,stableSince=Date.now();
+   do{
+    try{await page.waitForLoadState('networkidle',{timeout:remaining()});}
+    catch{throw new NoEffectIncompleteError('no-effect did not settle within 3 seconds');}
+    const current=await snapshot();
+    if(current!==previous){stableSince=Date.now();changed=true;previous=current;}
+    if(Date.now()>=deadline)break;
+    await page.waitForTimeout(Math.min(100,remaining()));
+   }while(true);
+   if(Date.now()-stableSince<750)throw new NoEffectIncompleteError('no-effect did not settle within 3 seconds');
   });
-  if(mutation||page.url()!==url||await snapshot()!==before)throw Error('no-effect changed state or submitted a mutation');
+  if(changed)throw Error('no-effect changed state or submitted a mutation');
   return {type:'no-effect',observed:true,unchanged:true,noMutationRequests:true};
- }finally{page.off('request',onRequest);}
+ }finally{page.off('request',onRequest);page.off('framenavigated',onNavigation);context.off('page',onPage);}
 }
 
 // These checks supplement, rather than copy, verify-live's asset/image/edge checks.

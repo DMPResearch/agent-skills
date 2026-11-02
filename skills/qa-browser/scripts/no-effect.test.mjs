@@ -60,3 +60,27 @@ for(const engine of ['chromium','webkit'])test(engine+' busy no-effect check end
   assert.equal(cell.complete,false);assert.equal(verdict(report.cells,report.gaps),'incomplete');assert.deepEqual(cell.failures,[]);
  }finally{for(const browser of browsers.values())await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));rmSync(out,{recursive:true,force:true});}
 });
+
+for(const engine of ['chromium','webkit'])test(engine+' observes late changes and missing effect signals',{skip:!process.env.QA_PW_PATH},async t=>{
+ const pw=createRequire(process.env.QA_PW_PATH)('playwright');
+ const server=createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end('<html><head><title>Before</title></head><body><button id="current">Current</button><div id="host"></div></body></html>')});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await pw[engine].launch();
+ try{for(const [name,delay,change]of [
+  ['1.5 second change',1500,()=>document.body.append('Changed')],
+  ['2 second change',2000,()=>document.body.append('Changed')],
+  ['2.6 second change',2600,()=>document.body.append('Changed')],
+  ['title',0,()=>document.title='After'],
+  ['shadow content',0,()=>document.querySelector('#host').shadowRoot.textContent='After'],
+  ['cookie',0,()=>document.cookie='qa_state=after; path=/'],
+  ['popup',0,()=>window.open('about:blank')],
+  ['reload',0,()=>location.reload()]
+ ])await t.test(name,async()=>{
+  const context=await browser.newContext(),page=await context.newPage();
+  try{
+   await page.goto(`http://127.0.0.1:${server.address().port}`);
+   if(name==='shadow content')await page.locator('#host').evaluate(e=>e.attachShadow({mode:'open'}).textContent='Before');
+   await page.locator('#current').evaluate((e,{delay,code})=>e.onclick=()=>delay?setTimeout(()=>eval('('+code+')()'),delay):eval('('+code+')()'),{delay,code:change.toString()});
+   await assert.rejects(steps(page,[{action:'no-effect',selector:'#current'}]),/changed state|did not settle/);
+  }finally{await context.close();}
+ });}finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
+});

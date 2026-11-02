@@ -18,7 +18,7 @@ test('same-URL link needs no readiness workaround and never supplies a visual ve
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   if(process.env.QA_NAV_STRESS==='1')for(let i=0;i<30;i++){const child=spawn(process.execPath,['-e','while(true){}'],{stdio:'ignore'});busy.push(child);exits.push(once(child,'exit'));}
   const baseURL=`http://127.0.0.1:${server.address().port}`,url={action:'url',value:baseURL+'/'};
-  const flow={id:'home',url:'/',entry:'home.js',main:true,states:['signed-out','signed-in'],steps:[],controls:[{selector:'#current',safe:true,steps:[{action:'no-effect',selector:'#current'}]}],breaks:[
+  const flow={id:'home',url:'/',entry:'home.js',main:true,states:['signed-out','signed-in'],steps:[],controls:[{selector:'#current',safe:true,steps:[{action:'click',selector:'#current'},url]}],breaks:[
    ...['empty','invalid'].map(kind=>({kind,notApplicable:true,reason:'No inputs or forms'})),
    {kind:'double-submit',target:'#current',safe:true,steps:[{action:'double-click',selector:'#current'},url]},
    {kind:'refresh',target:'#current',safe:true,steps:[{action:'reload'},url]},
