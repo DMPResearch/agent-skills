@@ -16,7 +16,7 @@ async function fixture(check){
   const manifests=[];
   const invoke=async(file,args)=>{
    const prompt=args.at(-1).match(/^Read (.+) and return/)[1],manifest=JSON.parse(readFileSync(prompt,'utf8').split('\n').at(-1));manifests.push(manifest);
-   return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:paths.includes(f.path)?'pass':'fail',failures:paths.includes(f.path)?[]:['Two independent buttons overlap and obscure their labels.']}))})};
+   return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:paths.some(path=>readFileSync(path).equals(readFileSync(f.path)))?'pass':'fail',rules:paths.some(path=>readFileSync(path).equals(readFileSync(f.path)))?[]:['overlapping-controls'],failures:paths.some(path=>readFileSync(path).equals(readFileSync(f.path)))?[]:['Two independent buttons overlap and obscure their labels.']}))})};
   };
   await check({report,out,browser,invoke,manifests,paths});
  }finally{await browser.close();rmSync(out,{recursive:true,force:true});}
@@ -32,7 +32,7 @@ test('one screen is split into bounded calls with exact unique coverage',()=>{
 
 test('every critic batch must catch its generated defect without reporting it as a screen finding',{skip:!enabled},()=>fixture(async({report,out,browser,invoke,manifests,paths})=>{
  await runReview(report,{},out,out,browser,{invoke});
- assert.ok(manifests.every(m=>m.length<=8&&m.filter(f=>!paths.includes(f.path)).length===1));
+ assert.ok(manifests.every(m=>m.length<=8&&m.filter(f=>!paths.some(path=>readFileSync(path).equals(readFileSync(f.path)))).length===1));
  assert.equal(report.review.complete,true);assert.equal(report.cells[0].critic,'pass');assert.deepEqual(report.cells[0].visualFailures,[]);
  assert.ok(report.review.batches.every(b=>b.canary?.status==='caught'));
  assert.ok(report.review.batches.every(b=>b.judgments.every(j=>paths.includes(j.path))));
@@ -61,4 +61,23 @@ test('resume reruns only failed batches and rejects changed frame identity',{ski
  report.build='different-build';calls=0;
  await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return invoke(...args);}});
  assert.equal(calls,2);
+}));
+
+test('quota on a changed first batch preserves later completed receipts for resume',{skip:!enabled},()=>fixture(async({report,out,browser,invoke,paths})=>{
+ const config={review:{framesPerBatch:3,resume:true}};
+ await runReview(report,config,out,out,browser,{invoke});assert.equal(report.review.complete,true);
+ writeFileSync(paths[0],Buffer.concat([readFileSync(paths[0]),Buffer.from([0])]));
+ await runReview(report,config,out,out,browser,{invoke:async()=>({code:1,stdout:'',stderr:'usage limit reached'})});
+ const ledger=JSON.parse(readFileSync(join(out,'review-ledger.json')));
+ assert.equal(ledger.batches.filter(b=>b.status==='pass'&&b.judgments).length,2);
+ let calls=0;await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return invoke(...args);}});
+ assert.equal(calls,1);assert.equal(report.review.complete,true);
+}));
+
+test('review-cap exhaustion is durable and resumes without repeating completed calls',{skip:!enabled,timeout:15000},()=>fixture(async({report,out,browser,invoke})=>{
+ const config={reviewTimeoutMs:5000,review:{framesPerBatch:3,resume:true}};let calls=0;
+ await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;await new Promise(r=>setTimeout(r,5100));return invoke(...args);}});
+ assert.equal(calls,1);assert.equal(report.review.complete,false);assert.ok(report.gaps.some(g=>g.includes('review budget exhausted')));
+ calls=0;await runReview(report,config,out,out,browser,{invoke:async(...args)=>{calls++;return invoke(...args);}});
+ assert.equal(calls,2);assert.equal(report.review.complete,true);
 }));

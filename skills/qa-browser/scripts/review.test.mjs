@@ -34,9 +34,9 @@ test('real sheets review sequentially, retry once and resolve flagged screens at
    if(calls===1)return {code:124,stdout:''};
    const promptPath=args.at(-1).match(/^Read (.+) and return/)[1];
    const manifest=JSON.parse(readFileSync(promptPath,'utf8').split('\n').at(-1));
-   assert.equal(manifest[0].isEntry,true,'critic must receive entry-frame identity');
+   assert.equal(manifest.find(f=>readFileSync(f.path).equals(readFileSync(path))).isEntry,true,'critic must receive entry-frame identity');
    assert.match(readFileSync(promptPath,'utf8'),/isEntry:true shows the initial screen before any control or break action/);
-   return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:f.path===path?(calls===2?'inspect':'pass'):'fail',failures:f.path===path?(calls===2?['Small text requires full-size check']:[]):['Independent controls overlap and obscure labels']}))})};
+   return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:readFileSync(f.path).equals(readFileSync(path))?(calls===2?'inspect':'pass'):'fail',rules:readFileSync(f.path).equals(readFileSync(path))?[]:['overlapping-controls'],failures:readFileSync(f.path).equals(readFileSync(path))?(calls===2?['Small text requires full-size check']:[]):['Independent controls overlap and obscure labels']}))})};
   }});
   const ledger=JSON.parse(readFileSync(join(out,'review-ledger.json')));assert.ok(ledger.batches.every(b=>b.frames.includes(path)));
   assert.ok(ledger.batches.every(b=>b.canary.status==='caught'));
