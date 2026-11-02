@@ -1,32 +1,33 @@
 import {pageChecks} from '../../verify-live/scripts/page-checks.mjs';
 
-export async function steps(page,items,root=page,target) {
+export async function steps(page,items,root=page,target,runNavigation=operation=>operation()) {
  const effects=[];
  for(const s of items){
   const loc=s.role?root.getByRole(s.role,{name:s.selector,exact:true}):s.label?root.getByLabel(s.selector,{exact:true}):root.locator(s.selector||'body');
   const value=s.env?process.env[s.env]:s.value;
   if(s.env&&!value)throw Error('required secret environment value unavailable');
-  if(target&&['click','double-click','file-chooser','empty-guard','fill','press','select','check'].includes(s.action)){
+  if(target&&['click','double-click','file-chooser','empty-guard','no-effect','fill','press','select','check'].includes(s.action)){
    const allowed=await loc.evaluate((e,target)=>[...document.querySelectorAll(target)].some(t=>t===e||t.contains(e)),target);
    if(!allowed)throw Error('break action escapes declared target');
   }
   switch(s.action){
    case 'file-chooser':{const event=page.waitForEvent('filechooser');try{await loc.click();await event;effects.push({type:'file-chooser',observed:true});}catch(error){event.catch(()=>{});throw error;}break;}
+   case 'no-effect':
    case 'empty-guard':{
-    if(!s.input||await root.locator(s.input).evaluate(e=>e.isContentEditable?e.textContent:e.value)!=='')throw Error('empty guard requires an empty declared input');
+    if(s.action==='empty-guard'&&(!s.input||await root.locator(s.input).evaluate(e=>e.isContentEditable?e.textContent:e.value)!==''))throw Error('empty guard requires an empty declared input');
     const snapshot=()=>root.locator('body').evaluate(e=>JSON.stringify([e.innerHTML,[...e.querySelectorAll('input,textarea,select')].map(x=>[x.value,x.checked])]));
     const before=await snapshot(),url=page.url();let mutation=false;const onRequest=r=>{if(!['GET','HEAD','OPTIONS'].includes(r.method()))mutation=true;};page.on('request',onRequest);
-    try{await loc.click();await page.waitForTimeout(100);if(mutation||page.url()!==url||await snapshot()!==before)throw Error('empty guard changed state or submitted a mutation');effects.push({type:'empty-guard',input:s.input,empty:true,unchanged:true,noMutationRequests:true});}finally{page.off('request',onRequest);}break;
+    try{await runNavigation(()=>loc.click());await page.waitForLoadState('load');await page.waitForTimeout(100);if(mutation||page.url()!==url||await snapshot()!==before)throw Error(s.action+' changed state or submitted a mutation');effects.push({type:s.action,input:s.input,...(s.action==='empty-guard'?{empty:true}:{observed:true}),unchanged:true,noMutationRequests:true});}finally{page.off('request',onRequest);}break;
    }
-   case 'click':await loc.click();break;
-   case 'double-click':await loc.dblclick();break;
+   case 'click':await runNavigation(()=>loc.click());break;
+   case 'double-click':await runNavigation(()=>loc.dblclick());break;
    case 'fill':await loc.fill(String(value));break;
-   case 'press':await loc.press(value);break;
+   case 'press':await runNavigation(()=>loc.press(value));break;
    case 'select':await loc.selectOption(value);break;
    case 'check':await loc.setChecked(value??true);break;
-   case 'reload':await page.reload({waitUntil:'load'});break;
-   case 'back':await page.goBack({waitUntil:'load'});break;
-   case 'forward':await page.goForward({waitUntil:'load'});break;
+   case 'reload':await runNavigation(()=>page.reload({waitUntil:'load'}));break;
+   case 'back':await runNavigation(()=>page.goBack({waitUntil:'load'}),{history:true});break;
+   case 'forward':await runNavigation(()=>page.goForward({waitUntil:'load'}),{history:true});break;
    case 'visible':await loc.waitFor({state:'visible'});break;
    case 'hidden':await loc.waitFor({state:'hidden'});break;
    case 'text':if(!await loc.innerText().then(t=>t.includes(String(value))))throw Error('expected text absent');break;
@@ -78,10 +79,11 @@ export function structureChecks(){
 
 export async function inspect(page){
  const failures=[];
- for(const frame of page.frames()){
+ for(const frame of page.frames())for(let attempt=0;attempt<2;attempt++){
   try{
-   if(frame!==page.mainFrame()&&!await (await frame.frameElement()).isVisible())continue;
-   if(!await frame.evaluate(()=>innerWidth>0&&innerHeight>0))continue;
+   if(frame!==page.mainFrame()&&!await (await frame.frameElement()).isVisible())break;
+   await frame.waitForLoadState('load');
+   if(!await frame.evaluate(()=>innerWidth>0&&innerHeight>0))break;
    await frame.evaluate(async()=>{
     await document.fonts.ready;
     const finite=document.getAnimations().filter(a=>a.playState==='running'&&a.effect?.getComputedTiming().iterations!==Infinity);
@@ -93,7 +95,11 @@ export async function inspect(page){
     failures.push(...await frame.evaluate(pageChecks),...await frame.evaluate(structureChecks));
    }
    await frame.evaluate(()=>scrollTo(0,0));
-  }catch{failures.push('frame inspection failed');}
+   break;
+  }catch(error){
+   if(attempt===0&&/Execution context was destroyed/i.test(error.message))continue;
+   failures.push('frame inspection failed');break;
+  }
  }
  return [...new Set(failures)];
 }

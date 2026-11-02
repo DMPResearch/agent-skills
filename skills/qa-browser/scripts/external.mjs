@@ -42,7 +42,7 @@ export function importCrawl(data,{expected,checkFiles=true}){
   else if(edge.controls.some(c=>!c.disabled)&&!controls.length)functionalFailures.push('no inventoried controls were exercised');
   for(const c of controls){
    if(c.error)functionalFailures.push('control failed: '+redact(c.label||String(c.index)));
-   else if(c.changed!==true&&c.disabled!==true&&!c.effects?.some(e=>(e.type==='file-chooser'&&e.observed===true)||(e.type==='empty-guard'&&e.input&&e.empty===true&&e.unchanged===true&&e.noMutationRequests===true)))functionalFailures.push('control has no verified state or navigation effect: '+redact(c.label||String(c.index)));
+   else if(c.changed!==true&&c.disabled!==true&&!c.effects?.some(e=>(e.type==='file-chooser'&&e.observed===true)||(e.type==='no-effect'&&e.observed===true&&e.unchanged===true&&e.noMutationRequests===true)||(e.type==='empty-guard'&&e.input&&e.empty===true&&e.unchanged===true&&e.noMutationRequests===true)))functionalFailures.push('control has no verified state or navigation effect: '+redact(c.label||String(c.index)));
   }
   if(r.failures?.some(f=>f.type==='crawl-error'))functionalFailures.push('screen traversal did not complete');
   for(const error of runtime){
@@ -50,7 +50,7 @@ export function importCrawl(data,{expected,checkFiles=true}){
   }
   failures.push(...functionalFailures.map(f=>'functional: '+f));
   const extra=controls.map(c=>r.path.replace(/\.png$/,`-control-${c.index}.png`)).filter(p=>checkFiles&&existsSync(p));
-  return {id,screen:e.screen,state:e.state||r.state||'unspecified',engine:e.engine,browserVersion:r.browserVersion||data.summary?.browserVersions?.[e.engine]||'unknown',theme:e.theme,size:e.size,complete:!gaps.length,frames:gaps.length?[]:[r.path,...extra],failures:[...new Set(failures)],gaps,controls,functional:failures.length?'fail':'pass',functionalFailures,repro:[`Open the served entry for ${e.screen}`,`Use ${e.engine}, ${e.theme}, ${e.size}`,...controls.filter(c=>c.error||c.changed===false).map(c=>'Activate '+redact(c.label||String(c.index)))]};
+  return {id,screen:e.screen,state:e.state||r.state||'unspecified',engine:e.engine,browserVersion:r.browserVersion||data.summary?.browserVersions?.[e.engine]||'unknown',theme:e.theme,size:e.size,complete:!gaps.length,entryFrame:r.path,frames:gaps.length?[]:[r.path,...extra],failures:[...new Set(failures)],gaps,controls,functional:failures.length?'fail':'pass',functionalFailures,repro:[`Open the served entry for ${e.screen}`,`Use ${e.engine}, ${e.theme}, ${e.size}`,...controls.filter(c=>c.error||c.changed===false).map(c=>'Activate '+redact(c.label||String(c.index)))]};
  });
  return {cells,expectedCells:expected.length,runFailures,runtimeDiagnostics:runtime.map(e=>({screen:e.screen,engine:e.engine,theme:e.theme,width:e.width,height:e.height,type:e.type,message:redact(e.message||'')})),gaps:data.summary?.complete?[]:['external crawl did not complete; inspect its fatal/cleanup evidence']};
 }

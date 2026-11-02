@@ -213,3 +213,13 @@ The visual lane intentionally uses only Opus. The specification's independent
 Codex code critique runs through the orchestrator's cross-review with the actual
 product diff and contracts. It remains explicitly unrun by this CLI; visual
 approval does not imply source approval.
+
+A control whose declared outcome is no change (for example the current-page
+navigation item) can use `{action:"no-effect",selector:"#current"}` as its
+complete step. It clicks normally, waits for load and verifies unchanged URL,
+DOM and field values, with no mutation requests. A changed result fails. This
+is not a waiver for an undeclared dead control. Entry captures are identified
+by `entryFrame` in cells and `isEntry` in critic manifests and sheet captions.
+Standing providers may supply the matching observed effect
+`{type:"no-effect",observed:true,unchanged:true,noMutationRequests:true}`.
+A declaration alone or an omitted verification field never satisfies the gate.

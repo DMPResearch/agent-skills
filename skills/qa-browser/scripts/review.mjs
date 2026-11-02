@@ -11,7 +11,7 @@ export function reviewBatches(cells,{screensPerBatch=8,framesPerSheet=8}={}){
   const screens=[...new Set(items.map(c=>c.screen))];
   for(let i=0;i<screens.length;i+=screensPerBatch){
    const selected=screens.slice(i,i+screensPerBatch);
-   const frames=items.filter(c=>selected.includes(c.screen)).flatMap(c=>c.frames.map(path=>({path,cell:c.id,screen:c.screen,engine:c.engine,theme:c.theme,size:c.size,repro:c.repro||[]})));
+   const frames=items.filter(c=>selected.includes(c.screen)).flatMap(c=>c.frames.map(path=>({path,isEntry:path===c.entryFrame,cell:c.id,screen:c.screen,engine:c.engine,theme:c.theme,size:c.size,repro:c.repro||[]})));
    if(!frames.length)continue;
    const sheets=[];for(let n=0;n<frames.length;n+=framesPerSheet)sheets.push(frames.slice(n,n+framesPerSheet));
    batches.push({id:group.replace('/','-')+'-'+(i/screensPerBatch+1),screens:selected,frames,sheets});
@@ -32,7 +32,7 @@ export function applyBatch(batch,parsed){
 export async function renderSheets(batch,out,browser){
  const page=await browser.newPage({viewport:{width:1800,height:1000}}),paths=[];
  try{for(const [index,frames]of batch.sheets.entries()){
-  const caption=f=>`${f.screen} | ${f.engine} ${f.theme} ${f.size}`.replace(/[<>&]/g,'');
+  const caption=f=>`${f.screen}${f.isEntry?' (entry)':''} | ${f.engine} ${f.theme} ${f.size}`.replace(/[<>&]/g,'');
   await page.setContent('<html><body style="margin:0;background:#fff;color:#111;font:18px sans-serif;display:grid;grid-template-columns:repeat(4,1fr)">'+frames.map(f=>`<figure style="margin:8px"><figcaption>${caption(f)}</figcaption><img style="width:100%;height:700px;object-fit:contain;object-position:top" src="data:image/png;base64,${readFileSync(f.path).toString('base64')}"></figure>`).join('')+'</body></html>');
   await page.locator('img').evaluateAll(es=>Promise.all(es.map(e=>e.decode())));
   const path=join(out,`sheet-${batch.id}-${index+1}.png`);await page.screenshot({path,fullPage:true});paths.push(path);
@@ -58,7 +58,7 @@ Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(',
  const checkpoint=()=>writeFileSync(join(out,'review-ledger.json'),JSON.stringify(report.review,null,2));
  async function call(batch,mode,sheets=[]){
   const key=batch.id+'-'+mode,promptPath=join(out,key+'.prompt.md');
-  const manifest=batch.frames.map(f=>({path:f.path,screen:f.screen,size:f.size}));
+  const manifest=batch.frames.map(f=>({path:f.path,screen:f.screen,size:f.size,isEntry:f.isEntry}));
   const instruction=mode==='sheets'?`Read ONLY these contact sheets first: ${sheets.join(', ')}. Each caption maps to a frame below. Judge every frame. Use inspect when text/details are too small or any defect is suspected; flagged frames receive full-size follow-up.`:`Read EVERY full-size frame below. Resolve the flagged observations. Give a definite pass or fail for each; do not return inspect.`;
   writeFileSync(promptPath,`${policy}\n${instruction}\nOutput only JSON {"frames":[{"path":"exact manifest path","status":"pass|fail|inspect","failures":["specific observation"]}]}. Exactly one entry per manifest path, no omitted or extra frames.\n${JSON.stringify(manifest)}`);
   const entry={id:key,mode,screens:batch.screens,frames:batch.frames.map(f=>f.path),sheets,attempts:[],status:'incomplete'};report.review.batches.push(entry);checkpoint();

@@ -26,7 +26,7 @@ test('real sheets review sequentially, retry once and resolve flagged screens at
  try{
   const page=await browser.newPage({viewport:{width:390,height:660}});await page.setContent('<h1>Settings</h1>');
   const path=join(out,'frame.png');await page.screenshot({path});await page.close();
-  const report={cells:[{id:'one',screen:'settings',engine:'chromium',theme:'light',size:'390x660',frames:[path],failures:[],gaps:[],complete:true}],gaps:[],sheets:[]};
+  const report={cells:[{id:'one',screen:'settings',engine:'chromium',theme:'light',size:'390x660',frames:[path],entryFrame:path,failures:[],gaps:[],complete:true}],gaps:[],sheets:[]};
   let calls=0,active=0;
   await runReview(report,{designRules:['AGENTS.md']},out,out,browser,{invoke:async(file,args)=>{
    active++;assert.equal(active,1);calls++;
@@ -34,6 +34,7 @@ test('real sheets review sequentially, retry once and resolve flagged screens at
    if(calls===1)return {code:124,stdout:''};
    const promptPath=args.at(-1).match(/^Read (.+) and return/)[1];
    const manifest=JSON.parse(readFileSync(promptPath,'utf8').split('\n').at(-1));
+   assert.equal(manifest[0].isEntry,true,'critic must receive entry-frame identity');
    return {code:0,stdout:JSON.stringify({frames:manifest.map(f=>({path:f.path,status:calls===2?'inspect':'pass',failures:calls===2?['Small text requires full-size check']:[]}))})};
   }});
   const ledger=JSON.parse(readFileSync(join(out,'review-ledger.json')));assert.ok(ledger.batches.every(b=>b.frames.includes(path)));
