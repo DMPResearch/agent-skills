@@ -16,12 +16,12 @@ export async function steps(page,items,root=page,target,runNavigation=operation=
    case 'handoff':{
     const own=new URL(page.url()).origin;
     if(new URL(s.origin).origin===own)throw Error('handoff origin must be external');
-    const wait=page.waitForURL(url=>url.origin!==own,{waitUntil:'commit'});
+    const wait=page.waitForEvent('framenavigated',{predicate:frame=>frame===page.mainFrame()&&new URL(frame.url()).origin!==own});
     try{
      await Promise.all([wait,s.gesture==='double-click'?loc.dblclick({noWaitAfter:true}):loc.click({noWaitAfter:true})]);
      const reached=new URL(page.url());effects.push({type:'handoff',host:reached.host,origin:reached.origin});
      if(reached.origin!==s.origin)throw Error('handoff reached unexpected origin: '+reached.origin);
-    }finally{wait.catch(()=>{});if(new URL(page.url()).origin!==own)await page.close();}
+    }finally{wait.catch(()=>{});if(new URL(page.url()).origin!==own){const closed=page.waitForEvent('close');const closing=page.close({runBeforeUnload:page.context().browser()?.browserType().name()==='chromium'});await Promise.race([closed,closing.then(()=>closed)]);}}
     return effects;
    }
    case 'file-chooser':{const event=page.waitForEvent('filechooser');try{await loc.click();await event;effects.push({type:'file-chooser',observed:true});}catch(error){event.catch(()=>{});throw error;}break;}
