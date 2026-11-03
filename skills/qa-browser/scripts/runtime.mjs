@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+import {readBody} from './body.mjs';
 import {trackNavigations} from './navigation.mjs';
 import {redact} from './contract.mjs';
 import {validateObservations,requestObservation,warningObservation} from './observations.mjs';
@@ -22,6 +24,8 @@ export function observeRuntime(page,cell,config={},failures=cell.failures){
    else if(!expected(request,'cancelled')){const gap='unclassified cancelled request: '+redact(request.url());if(!cell.gaps.includes(gap))cell.gaps.push(gap);}
   }
  };
+ const assetChecks=[];
+ const audit=async()=>{for(let index=0;index<assetChecks.length;index++)await assetChecks[index];auditCancellations();};
  const pending=new Set();page.on('request',request=>pending.add(request));
  page.on('console',message=>{
   if(!['error','warning'].includes(message.type()))return;
@@ -30,10 +34,21 @@ export function observeRuntime(page,cell,config={},failures=cell.failures){
   const source=message.location(),target=message.type()==='warning'?cell.gaps:failures;
   target.push('console '+message.type()+' at '+redact(source.url||'[inline]')+':'+source.lineNumber+'; '+redact(message.text()));
  });
- page.on('response',response=>{if(response.status()>=400)failures.push(`HTTP ${response.status()}: ${redact(response.url())}`);});
+ page.on('response',response=>{
+  if(response.status()>=400)failures.push(`HTTP ${response.status()}: ${redact(response.url())}`);
+  const url=new URL(response.url());
+  if(!config.assetHashes||url.origin!==new URL(config.baseURL).origin||!['script','stylesheet','font'].includes(response.request().resourceType()))return;
+  const context=typeof page.pages==='function'?page:page.context();
+  const expected=config.assetHashes[url.pathname],scope={flow:cell.screen,state:cell.state,engine:cell.engine,viewport:cell.size};
+  if(!expected){cell.gaps.push('served build asset absent from manifest: '+redact(url.pathname));return;}
+  assetChecks.push(readBody(response,{retry:async()=>{const fresh=await context.request.get(response.url(),{timeout:2000,maxRetries:0});if(!fresh.ok())throw Error('fresh asset request HTTP '+fresh.status());return fresh.body();}}).then(result=>{
+   if(result.reason){cell.diagnostics.push({...result,body:undefined,...scope});if(!result.navigationCancelled)cell.gaps.push('served asset body unverified: '+result.url+'; '+result.error);}
+   if(result.body&&createHash('sha256').update(result.body).digest('hex')!==expected)failures.push('served asset hash mismatch: '+redact(url.pathname));
+  }));
+ });
  page.on('requestfailed',request=>{pending.delete(request);const error=request.failure()?.errorText||'';if(/ABORTED|cancelled|canceled/i.test(error))cancelled.add(request);else failures.push('request failed: '+redact(request.url())+'; '+redact(error));});
  page.on('requestfinished',request=>{pending.delete(request);if(request.timing().responseEnd>Number(config.slowRequestMs||5000))failures.push('slow request: '+redact(request.url()));});
- return {auditCancellations,expectedCancellation:request=>expected(request,'cancelled'),async settle(){
+ return {audit,auditCancellations,expectedCancellation:request=>expected(request,'cancelled'),async settle(){
   const deadline=Date.now()+2000;
   do{
    await new Promise(resolve=>setTimeout(resolve,25));

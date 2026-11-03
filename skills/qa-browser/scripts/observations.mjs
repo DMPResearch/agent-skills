@@ -38,15 +38,15 @@ export function validateObservations(classes,{baseURL,serviceEnvironment},path='
    if(!text(c.message)||!Array.isArray(c.source.paths)||!c.source.paths.length||c.source.paths.length>8||c.source.paths.some(p=>!literalPath(p)))throw Error(at+': send one exact warning message and exact source paths');
   }else throw Error(at+'.kind: send external-request or expected-development-warning');
   const target=c.kind==='external-request'?c.match.origin:c.source.origin,hostname=target?new URL(target).hostname:c.match.hostnameSuffix.slice(1);
-  if(c.kind==='external-request'&&c.match.hostnameSuffix&&!registrableDomain(hostname))throw Error(at+'.match.hostnameSuffix: send a service domain below a public suffix');
+  if(c.kind==='external-request'&&c.match.hostnameSuffix&&!registrableDomain(hostname))throw Error(at+'.match.hostnameSuffix: send a service domain below a known public suffix; unknown suffixes need an exact origin and sameSiteException');
   if(c.sameSiteException!==undefined){strict(c.sameSiteException,['hostname','reason'],at+'.sameSiteException');if(!target||c.sameSiteException.hostname!==hostname||!text(c.sameSiteException.reason))throw Error(at+'.sameSiteException: send an exact origin, its exact hostname and a reason for treating this same-site service as external');}
-  if(!externalBoundary(c,base,{origin:target,hostname},Boolean(target)))throw Error(at+'.sameSiteException: same-site hosts share the app registrable domain; send an exact origin and {hostname,reason} explaining its separate ownership');
+  if(!externalBoundary(c,base,{origin:target,hostname},Boolean(target)))throw Error(at+'.sameSiteException: same-site or unknown-suffix hosts have no proven external boundary; send an exact origin and {hostname,reason} explaining its separate ownership');
  }
 }
 
 function externalBoundary(rule,base,url,exact){
  if(url.origin===base.origin)return false;
- return !sameSite(base,url)||Boolean(exact&&rule.sameSiteException?.hostname===url.hostname&&text(rule.sameSiteException.reason));
+ return sameSite(base,url)===false||Boolean(exact&&rule.sameSiteException?.hostname===url.hostname&&text(rule.sameSiteException.reason));
 }
 
 function pathMatches(path,rule){

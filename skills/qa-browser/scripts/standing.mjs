@@ -33,7 +33,7 @@ export async function captureStanding(tasks,env){
     (async()=>{await adapter.authenticate?.({context,config,flow,state:state.id,pace:runPace});return adapter.captureStanding({context,config,flow,state,engine,out,pace:runPace,beginCell,matrix:group.map(({theme,size})=>({engine,theme,size}))});})(),
     new Promise((_,reject)=>{timer=setTimeout(()=>{context.close().catch(()=>{});reject(Error('standing capture budget exhausted'));},Math.max(1,Math.min(env.remaining?.()||1800000,group.length*60000)));})
    ]);
-   await observer.settle();observer.auditCancellations();await errors.finish();clearTimeout(cellTimer);
+   await observer.settle();await observer.audit();await errors.finish();clearTimeout(cellTimer);
    if(begun.size!==wanted.size)throw Error('standing provider omitted beginCell coverage: '+[...wanted].filter(k=>!begun.has(k)).join(', '));
    for(const row of data.results||[])if(row.state!==state.id)throw Error('standing result state does not match declared state');
    const terminalControls=flow.controls.filter(c=>c.terminal),terminalBreaks=flow.breaks.filter(b=>b.terminal&&(!b.state||b.state===state.id));

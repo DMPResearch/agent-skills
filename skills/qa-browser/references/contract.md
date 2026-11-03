@@ -377,7 +377,8 @@ stop without retry or model substitution.
 
 An external class must stay outside the app’s registrable domain, determined
 with the bundled Public Suffix List including private suffixes. Same-site
-siblings and narrower suffixes are not external by default. An exact origin may
+siblings and narrower suffixes are not external by default. Unknown suffixes
+also require the exact-host exception; no implicit one-label suffix is assumed. An exact origin may
 opt in with `sameSiteException:{hostname,reason}` naming that exact host and
 explaining its separate ownership. Suffix classes cannot use this exception.
 Same-origin exclusions always hold, even with an exception. The same boundary
@@ -476,3 +477,10 @@ They are all reviewed alongside the entry; declared missing paths, reused paths
 or images narrower/shorter than the cell viewport refuse coverage. Full-page
 heights may exceed the viewport. Deferred terminal checks retain readable frames
 for diagnostic critique while their functional verdict remains incomplete.
+
+All capture phases await the shared runtime asset-manifest audit before accepting
+results. First-party scripts, stylesheets and fonts are checked against
+`assetHashes` at capture time, even when the initial production manifest probe
+matched. Changed bytes fail; an undeclared asset or unavailable body remains a
+gap. Native, standing and terminal paths use the same response enforcement and
+the existing bounded read/retry policy.

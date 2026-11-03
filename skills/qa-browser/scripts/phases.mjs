@@ -96,10 +96,10 @@ export function terminalQueue(){
      const settled=await observer.settle();
      const failures=await inspect(page);if(failures.length)throw Error(failures.join('; '));
      const path=join(out,'terminal-'+id+'.png');await page.screenshot({path,fullPage:true,mask:config.redactSelectors?.map(s=>root.locator(s))||[]});cells[0].frames.push(path);record.frame=path;
-     observer.auditCancellations();
+     await observer.audit();
      record.status=runtime.failures.length?'fail':settled&&!runtime.gaps.length?'pass':'incomplete';
     }catch(error){errors?.caught(error);record.error=redact(error.message);if(entered){record.status='fail';for(const cell of cells)cell.failures.push('shared terminal expected effect failed: '+record.target+'; '+record.error);}else report.gaps.push('shared terminal check unavailable: '+id+'; '+record.error);}
-    finally{if(observer){await observer.settle();observer.auditCancellations();}await errors?.finish();if(isolated&&context)try{await adapter.cleanupTerminal({context,config,flow,state:state.id,engine,recipe,kind,pace:terminalPace});}catch(error){record.status='incomplete';runtime.gaps.push('isolated terminal cleanup failed: '+redact(error.message));}clearTimeout(timer);if(context)await context.close().catch(()=>{});if(runtime.failures.length)record.status='fail';else if(runtime.gaps.length)record.status='incomplete';}
+    finally{if(observer){await observer.settle();await observer.audit();}await errors?.finish();if(isolated&&context)try{await adapter.cleanupTerminal({context,config,flow,state:state.id,engine,recipe,kind,pace:terminalPace});}catch(error){record.status='incomplete';runtime.gaps.push('isolated terminal cleanup failed: '+redact(error.message));}clearTimeout(timer);if(context)await context.close().catch(()=>{});if(runtime.failures.length)record.status='fail';else if(runtime.gaps.length)record.status='incomplete';}
     for(const cell of cells){
      cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps);cell.diagnostics||=[];cell.diagnostics.push(...runtime.diagnostics);cell.observations||=[];cell.observations.push(...runtime.observations||[]);
      if(['pass','fail'].includes(record.status))cell.gaps=cell.gaps.filter(g=>g!=='terminal check pending: '+id);

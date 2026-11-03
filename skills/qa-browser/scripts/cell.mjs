@@ -4,7 +4,6 @@ import {createHash} from 'node:crypto';
 import {redact,breakKinds} from './contract.mjs';
 import {observeRuntime,verifyIdentity} from './runtime.mjs';
 import {observeErrors} from './errors.mjs';
-import {readBody} from './body.mjs';
 import {trackNavigations} from './navigation.mjs';
 import {inspect,inventory,steps,withPrototypeChrome,NoEffectIncompleteError} from './browser.mjs';
 
@@ -12,7 +11,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
  const {flow,engine,theme,size,state}=t;
  const id=`${flow.id}-${state.id}-${engine}-${theme}-${size}`.replace(/[^a-z0-9.-]/gi,'_');
  const cell={id,screen:flow.id,state:state.id,engine,theme,size,complete:false,frames:[],failures:[],gaps:[],controls:[],repro:[`Open ${redact(new URL(flow.url,config.baseURL))}`,`Use ${engine}, ${size}, ${theme}, state ${state.id}`]};report.cells.push(cell);
- let context,cellTimer,navigation,runtime,errors;const observed=[],assetChecks=[];
+ let context,cellTimer,navigation,runtime,errors;const observed=[];
  try{
   if(report.blockedAuthStates?.includes(state.id)||state.id==='signed-in'&&report.blockedAuthEngines?.includes(engine)){cell.gaps.push('authentication unavailable; cell not attempted');return;}
   if(!launches.has(engine))launches.set(engine,browserModule[engine].launch().then(b=>{browsers.set(engine,b);return b;}));
@@ -42,17 +41,6 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   runtime=observeRuntime(page,cell,{...config,observations:flow.observations},observed);
   navigation=trackNavigations(page);
   const act=(items,target)=>steps(page,items,surface,target,navigation.run,pace);
-  page.on('response',r=>{
-   const url=new URL(r.url());
-   if(config.assetHashes&&url.origin===new URL(config.baseURL).origin&&['script','stylesheet','font'].includes(r.request().resourceType())){
-    const expected=config.assetHashes[url.pathname];
-    if(!expected)cell.gaps.push('served build asset absent from manifest: '+redact(url.pathname));
-    else assetChecks.push(readBody(r,{retry:async()=>{const fresh=await context.request.get(r.url(),{timeout:2000,maxRetries:0});if(!fresh.ok())throw Error('fresh asset request HTTP '+fresh.status());return fresh.body();}}).then(result=>{
-     if(result.reason){cell.diagnostics.push({...result,body:undefined,flow:flow.id,state:state.id,engine,viewport:size});if(!result.navigationCancelled)cell.gaps.push('served asset body unverified: '+result.url+'; '+result.error);}
-     if(result.body){if(createHash('sha256').update(result.body).digest('hex')!==expected)observed.push('served asset hash mismatch: '+redact(url.pathname));}
-    }));
-   }
-  });
   let entryBinding;
   const reset=async()=>{
    errors.phase('entry');
@@ -159,14 +147,14 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   }
   for(const entry of cell.controls.filter(c=>c.status==='break-contract-pending'))entry.status=cell.controls.some(c=>c.graphState===entry.graphState&&entry.breakIndices.includes(c.index)&&['pass','fail','shared'].includes(c.status))?'covered-by-break-contract':'incomplete';
   await runtime.settle();
-  await Promise.all(assetChecks);
+  await runtime.audit();
   cell.failures=[...new Set(cell.failures)];cell.gaps=[...new Set(cell.gaps)];
   cell.complete=cell.gaps.length===0;
  }catch(error){const detail=errors?.caught(error);cell.gaps.push('cell failed during '+(detail?.phase||'context')+': '+redact(error.message));}
  finally{
   if(runtime)await runtime.settle();
   await errors?.finish();
-  runtime?.auditCancellations();
+  await runtime?.audit();
   cell.gaps=[...new Set(cell.gaps)];if(cell.gaps.length)cell.complete=false;
   cell.failures=[...new Set([...cell.failures,...observed])];clearTimeout(cellTimer);
   await buildObserver?.finish();if(context)await context.close().catch(()=>{});
