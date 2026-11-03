@@ -462,11 +462,14 @@ refuses missing image deliveries, swapped paths, missing/duplicate bindings or
 changed final judgments, even when the final answer claims a calibration catch.
 Canary validation still requires the matching structured overlap verdict.
 
-This is one call per existing batch, with serialized image reads inside it.
-It adds no planned critic calls or matrix reductions. Serialized tool turns add
-latency; real fit under the existing ten-minute call cap must be measured.
-Structured result and binding receipts are redacted by field/value before JSON
-serialization, including nested result JSON. Exact artifact identities survive;
+This is one subscription CLI invocation per existing batch. A full batch of
+28 real frames plus calibration needs 29 sequential image-read rounds; a default
+sheet batch needs four. These increase underlying model turns, latency and quota
+use even though CLI invocation count is unchanged. Real fit under the existing
+ten-minute call cap must be measured; no matrix is reduced.
+Ledger judgments, structured results and binding receipts are scrubbed before JSON
+serialization, including nested result JSON. Calibration counts as caught only
+after image delivery and binding validation. Exact artifact identities survive;
 short credentials, compound sensitive keys and headers do not.
 
 Standing `results[].frames` lists additional reached/control/break captures.

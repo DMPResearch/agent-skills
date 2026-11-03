@@ -25,7 +25,7 @@ for(const mode of ['wrong-path','missing-image','unbound'])test(mode+' cannot ap
   if(mode!=='unbound')for(const event of events)options.onEvent?.(event);
   return {code:0,stdout:JSON.stringify({frames})};
  }});
- assert.equal(report.review.complete,false);assert.ok(report.cells.every(c=>c.critic!=='pass'));assert.ok(report.review.batches.some(b=>b.attempts.some(a=>/binding|image/i.test(a.reason||''))));
+ assert.equal(report.review.complete,false);assert.ok(report.cells.every(c=>c.critic!=='pass'));assert.ok(report.review.batches.every(b=>b.canary.status!=='caught'),'unbound images cannot establish a caught canary');assert.ok(report.review.batches.some(b=>b.attempts.some(a=>/binding|image/i.test(a.reason||''))));
 }));
 
 test('bound verdicts retain valid structured JSON after redaction',{skip:!process.env.QA_PW_PATH},()=>fixture(async({report,out,browser,result})=>{
@@ -34,6 +34,6 @@ test('bound verdicts retain valid structured JSON after redaction',{skip:!proces
   const {prompt,frames}=result(args);frames[0].failures.push('session='+value,'Unauthorized: denied','Authorization: Token '+value);for(const event of imageEvents(prompt,frames))options.onEvent?.(event);
   return {code:0,stdout:JSON.stringify({session_id:value,input_tokens:12,result:JSON.stringify({frames})})};
  }});
- assert.equal(report.review.complete,true);
- for(const b of report.review.batches){const text=readFileSync(join(out,b.id+'-attempt1.txt'),'utf8'),envelope=JSON.parse(text);assert.ok(!text.includes(value));assert.ok(Array.isArray(JSON.parse(envelope.result).frames));}
+ assert.equal(report.review.complete,true);assert.ok(!readFileSync(join(out,'review-ledger.json'),'utf8').includes(value),'ledger retained a named secret');
+ for(const b of report.review.batches){const text=readFileSync(join(out,b.id+'-attempt1.txt'),'utf8'),envelope=JSON.parse(text);assert.ok(!text.includes(value));assert.ok(Array.isArray(JSON.parse(envelope.result).frames));const bindings=JSON.parse(readFileSync(join(out,b.id+'-attempt1.bindings.json'),'utf8'));assert.ok(bindings.reads.every(r=>!r.path.includes('[redacted]')),'public sheet identity was lost');}
 }));

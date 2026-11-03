@@ -119,8 +119,8 @@ Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(',
    if(Date.now()>=deadline)break;
    const started=Date.now(),audit=reviewAudit(manifest);
    const result=await invoke('claude',['-p','--model','opus','--permission-mode','dontAsk','--tools','Read','--allowedTools','Read','--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--no-session-persistence','--verbose','--output-format','stream-json','--',`Read ${promptPath} and return the required JSON after reviewing its images.`],{cwd,onEvent:audit.event,timeout:Math.min(config.criticTimeoutMs||600000,600000,deadline-Date.now()),env:{...process.env,CLAUDE_CONFIG_DIR:join(process.env.HOME,'.claude-b')}});
-   writeFileSync(join(out,`${key}-attempt${attempt+1}.txt`),receipt(result.stdout,frames));
-   writeFileSync(join(out,`${key}-attempt${attempt+1}.bindings.json`),receipt(JSON.stringify(audit.snapshot()),frames));
+   writeFileSync(join(out,`${key}-attempt${attempt+1}.txt`),receipt(result.stdout,[...frames,...sheets.map(path=>({path}))]));
+   writeFileSync(join(out,`${key}-attempt${attempt+1}.bindings.json`),receipt(JSON.stringify(audit.snapshot()),[...frames,...sheets.map(path=>({path}))]));
    writeFileSync(join(out,`${key}-attempt${attempt+1}.stderr.txt`),redact(result.stderr||''));
    const record={attempt:attempt+1,exit:result.code,elapsedMs:Date.now()-started};entry.attempts.push(record);
    let envelope;try{envelope=JSON.parse(result.stdout);}catch{}
@@ -134,8 +134,8 @@ Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(',
     if(!['fail','inspect'].includes(check.status)||!check.rules?.includes(entry.canary.expectedRule)){
      halted=true;entry.canary.status='missed';record.reason='generated overlapping controls were not detected';report.gaps.push('critic calibration missed; no visual verdict');checkpoint();return null;
     }
-    entry.canary.status='caught';entry.binding=audit.validate(all.frames);
-    const judgment=applyBatch(batch,{frames:all.frames.filter(f=>f.path!==control).map(f=>({...f,path:frames.find(x=>x.path===f.path).source}))});
+    entry.binding=audit.validate(all.frames);entry.canary.status='caught';
+    const judgment=applyBatch(batch,{frames:all.frames.filter(f=>f.path!==control).map(f=>({path:frames.find(x=>x.path===f.path).source,status:f.status,rules:(f.rules||[]).map(redact),failures:f.failures.map(redact)}))});
     if(mode!=='sheets'&&judgment.frames.some(f=>f.status==='inspect'))throw Error('full-size review did not resolve verdict');
     entry.status=judgment.status;entry.judgments=judgment.frames;checkpoint();return judgment;
    }catch(error){record.reason=redact(error.message);checkpoint();}
