@@ -467,3 +467,9 @@ latency; real fit under the existing ten-minute call cap must be measured.
 Structured result and binding receipts are redacted by field/value before JSON
 serialization, including nested result JSON. Exact artifact identities survive;
 short credentials, compound sensitive keys and headers do not.
+
+Standing `results[].frames` lists additional reached/control/break captures.
+They are all reviewed alongside the entry; declared missing paths, reused paths
+or images narrower/shorter than the cell viewport refuse coverage. Full-page
+heights may exceed the viewport. Deferred terminal checks retain readable frames
+for diagnostic critique while their functional verdict remains incomplete.

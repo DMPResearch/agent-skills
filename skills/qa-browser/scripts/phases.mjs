@@ -105,7 +105,7 @@ export function terminalQueue(){
      cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps);cell.diagnostics||=[];cell.diagnostics.push(...runtime.diagnostics);cell.observations||=[];cell.observations.push(...runtime.observations||[]);
      if(['pass','fail'].includes(record.status))cell.gaps=cell.gaps.filter(g=>g!=='terminal check pending: '+id);
      for(const entry of cell.controls.filter(c=>c.terminal===id))entry.status=record.status==='pass'?'shared':record.status;
-     cell.complete=cell.gaps.length===0;
+     cell.complete=cell.gaps.length===0;cell.functional=cell.failures.length?'fail':cell.complete?'pass':'incomplete';
     }
    }
   }

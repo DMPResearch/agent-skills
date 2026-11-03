@@ -5,10 +5,12 @@ const key=r=>[r.screen,r.engine,r.theme,r.size||`${r.width}x${r.height}`].join('
 export function importCrawl(data,{expected,checkFiles=true,deferred={controls:[],breaks:[]}}){
  const deferredCheck=c=>c.deferred===true&&c.pass===undefined&&deferred.breaks.some(b=>b.kind===c.kind&&b.target===c.target);
  const satisfied=c=>c.pass===true||deferredCheck(c);
- const rows=new Map(),paths=new Set();
+ const rows=new Map(),paths=new Map();
  for(const r of data.results||[]){
   if(rows.has(key(r))||paths.has(r.path))throw Error('duplicate capture key or frame path: '+key(r));
-  rows.set(key(r),r);paths.add(r.path);
+  if(r.frames!==undefined&&(!Array.isArray(r.frames)||r.frames.some(p=>typeof p!=='string'||!p)))throw Error('declared reached frames must be nonempty paths');
+  for(const path of [r.path,...r.frames||[]]){if(paths.has(path))throw Error('duplicate frame path: '+path);paths.set(path,key(r));}
+  rows.set(key(r),r);
  }
  const wanted=new Set(expected.map(key));
  const unexpected=[...rows.keys()].filter(k=>!wanted.has(k));
@@ -35,6 +37,12 @@ export function importCrawl(data,{expected,checkFiles=true,deferred={controls:[]
   }
   const edge=(data.edges||[]).find(x=>key(x)===key(e));
   const controls=(data.interactions||[]).filter(x=>x.type!=='navigation-recovery'&&key(x)===key(e));
+  const extra=[...new Set([...(r.frames||[]),...controls.map(c=>r.path.replace(/\.png$/,`-control-${c.index}.png`)).filter(p=>checkFiles&&existsSync(p))])];
+  for(const path of extra){
+   if(paths.has(path)&&paths.get(path)!==key(e))throw Error('duplicate frame path: '+path);paths.set(path,key(e));
+   if(checkFiles){if(!existsSync(path))gaps.push('declared reached frame missing: '+path);else{const png=readFileSync(path),[w,h]=e.size.split('x').map(Number),dpr=data.summary?.dpr||1;if(png.length<24||png.toString('hex',0,8)!=='89504e470d0a1a0a'||png.readUInt32BE(16)!==w*dpr||png.readUInt32BE(20)<h*dpr)gaps.push('reached frame dimensions do not match viewport: '+path);}}
+  }
+  const imagesOK=!gaps.length;
   const functionalFailures=[];
   for(const check of edge?.checks||[])if(!satisfied(check)||check.deferred&&!deferredCheck(check))functionalFailures.push('break check failed: '+check.kind);
   for(const kind of breakKinds)if(!edge?.checks?.some(c=>c.kind===kind&&satisfied(c)))functionalFailures.push('missing break check: '+kind);
@@ -54,8 +62,7 @@ export function importCrawl(data,{expected,checkFiles=true,deferred={controls:[]
   }
   if((edge?.checks||[]).some(c=>c.deferred)||controls.some(c=>c.deferred))gaps.push('terminal evidence deferred; standing terminal phase required');
   failures.push(...functionalFailures.map(f=>'functional: '+f));
-  const extra=controls.map(c=>r.path.replace(/\.png$/,`-control-${c.index}.png`)).filter(p=>checkFiles&&existsSync(p));
-  return {id,screen:e.screen,state:e.state||r.state||'unspecified',engine:e.engine,browserVersion:r.browserVersion||data.summary?.browserVersions?.[e.engine]||'unknown',theme:e.theme,size:e.size,complete:!gaps.length,entryFrame:r.path,frames:gaps.length?[]:[r.path,...extra],failures:[...new Set(failures)],gaps,controls,functional:failures.length?'fail':'pass',functionalFailures,repro:[`Open the served entry for ${e.screen}`,`Use ${e.engine}, ${e.theme}, ${e.size}`,...controls.filter(c=>c.error||c.changed===false).map(c=>'Activate '+redact(c.label||String(c.index)))]};
+  return {id,screen:e.screen,state:e.state||r.state||'unspecified',engine:e.engine,browserVersion:r.browserVersion||data.summary?.browserVersions?.[e.engine]||'unknown',theme:e.theme,size:e.size,complete:!gaps.length,entryFrame:r.path,frames:imagesOK?[r.path,...extra]:[],failures:[...new Set(failures)],gaps,controls,functional:failures.length?'fail':gaps.length?'incomplete':'pass',functionalFailures,repro:[`Open the served entry for ${e.screen}`,`Use ${e.engine}, ${e.theme}, ${e.size}`,...controls.filter(c=>c.error||c.changed===false).map(c=>'Activate '+redact(c.label||String(c.index)))]};
  });
  return {cells,expectedCells:expected.length,runFailures,runtimeDiagnostics:runtime.map(e=>({screen:e.screen,engine:e.engine,theme:e.theme,width:e.width,height:e.height,type:e.type,message:redact(e.message||'')})),gaps:data.summary?.complete?[]:['external crawl did not complete; inspect its fatal/cleanup evidence']};
 }

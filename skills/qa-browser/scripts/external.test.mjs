@@ -63,11 +63,17 @@ test('external no-effect evidence is refused without a flow-bound declaration',(
 
 test('deferred standing evidence cannot pass outside its declared terminal phase',()=>{
  const expected=[one],check={kind:'signed-out',target:'#exit',deferred:true},control={...one,selector:'#exit',deferred:true};
- const checks=breakKindsFixture().filter(c=>c.kind!=='signed-out');checks.push(check);
+ const checks=breakKindsFixture().filter(c=>c.kind!=='signed-out');checks.push(check,...['double-submit','refresh','back-forward'].map(kind=>({kind,target:'#exit',pass:true})));
  const data={summary:{complete:true},results:[one],edges:[{...one,controls:[{selector:'#exit'}],checks}],interactions:[control]};
  const unbound=importCrawl(data,{expected,checkFiles:false}).cells[0];assert.equal(unbound.functional,'fail');
  const deferred={controls:[{selector:'#exit'}],breaks:[{kind:'signed-out',target:'#exit'}]};
- const bound=importCrawl(data,{expected,checkFiles:false,deferred}).cells[0];assert.equal(bound.complete,false);assert.ok(bound.gaps.some(g=>g.includes('terminal')));
+ const bound=importCrawl(data,{expected,checkFiles:false,deferred}).cells[0];assert.equal(bound.complete,false);assert.ok(bound.gaps.some(g=>g.includes('terminal')));assert.equal(bound.functional,'incomplete');assert.deepEqual(bound.frames,[one.path]);
  assert.throws(()=>importCrawl({...data,results:[]},{expected,checkFiles:false,deferred}),/missing capture cells/);
 });
 function breakKindsFixture(){return ['empty','invalid','double-submit','refresh','back-forward','signed-out','signed-in'].map(kind=>({kind,pass:true}));}
+
+test('standing captures retain every declared reached frame and refuse path reuse',()=>{
+ const expected=[one],checks=breakKindsFixture(),data={summary:{complete:true},results:[{...one,frames:['/tmp/reached.png']}],edges:[{...one,controls:[],checks}],interactions:[]};
+ const cell=importCrawl(data,{expected,checkFiles:false}).cells[0];assert.deepEqual(cell.frames,[one.path,'/tmp/reached.png']);
+ assert.throws(()=>importCrawl({...data,results:[{...one,frames:[one.path]}]},{expected,checkFiles:false}),/duplicate.*frame/);
+});
