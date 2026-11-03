@@ -375,23 +375,15 @@ stop without retry or model substitution.
 
 ### Declared external observations
 
-A flow may supply `observations`, at most eight classes with unique `id`, `owner`
-and `reason`. These are visible receipts, never a general ignore list. An
-`external-request` class declares `match` with either an exact external `origin`
-or a label-bound `hostnameSuffix` and `scheme:"https"`; exact `path`, `methods`
-from GET/HEAD/OPTIONS and `resourceTypes` from fetch/xhr; and `outcomes` from
-pending/cancelled only. A variable path segment uses
-`{prefix:"/probes/",suffix:"/result",maxSegmentLength:64}`; only one bounded
-alphanumeric, underscore or hyphen segment is accepted. Same-origin matches are
-refused both at validation and observation. HTTP errors, unexpected transport
-failures and control assertions remain failures. Ambiguous matches are not exempt.
-
-A separate `expected-development-warning` class needs
-`serviceEnvironment:"development"`, an exact external
-`source:{origin,paths:["/client.js"]}` and exact `message`. Same-origin or different
-warnings remain visible checks. Every matching receipt retains the class, owner,
-reason, URL and observed outcome in JSON and Markdown reports. Consumers declare
-their service classes as flow data; no provider-specific rules live in the tool.
+An external class must stay outside the app’s registrable domain, determined
+with the bundled Public Suffix List including private suffixes. Same-site
+siblings and narrower suffixes are not external by default. An exact origin may
+opt in with `sameSiteException:{hostname,reason}` naming that exact host and
+explaining its separate ownership. Suffix classes cannot use this exception.
+Same-origin exclusions always hold, even with an exception. The same boundary
+covers exact development warnings and runtime matching; exception receipts stay
+visible. See [the observation contract](observations.md) for fields, examples,
+IP/localhost rules and snapshot provenance.
 
 ### Runtime error provenance
 

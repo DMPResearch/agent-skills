@@ -5,10 +5,11 @@ import {validateObservations,requestObservation,warningObservation} from './obse
 export function observeRuntime(page,cell,config={},failures=cell.failures){
  cell.diagnostics||=[];cell.observations||=[];
  const classes=config.observations||[];validateObservations(classes,config);
+ const exception=rule=>rule.sameSiteException?{hostname:rule.sameSiteException.hostname,reason:redact(rule.sameSiteException.reason)}:undefined;
  const seen=new WeakMap();
  const expected=(request,outcome)=>{
   const rule=requestObservation(classes,config.baseURL,request,outcome);if(!rule)return false;
-  const prior=seen.get(request)||new Set();if(!prior.has(outcome)){cell.observations.push({kind:'external-request',classId:rule.id,owner:rule.owner,reason:redact(rule.reason),outcome,method:request.method(),resourceType:request.resourceType(),url:redact(request.url()),port:new URL(request.url()).port||'default'});prior.add(outcome);seen.set(request,prior);}
+  const prior=seen.get(request)||new Set();if(!prior.has(outcome)){cell.observations.push({kind:'external-request',classId:rule.id,owner:rule.owner,sameSiteException:exception(rule),reason:redact(rule.reason),outcome,method:request.method(),resourceType:request.resourceType(),url:redact(request.url()),port:new URL(request.url()).port||'default'});prior.add(outcome);seen.set(request,prior);}
   return true;
  };
  const navigations=new Map(),cancelled=new Set(),audited=new Set();
@@ -25,7 +26,7 @@ export function observeRuntime(page,cell,config={},failures=cell.failures){
  page.on('console',message=>{
   if(!['error','warning'].includes(message.type()))return;
   const rule=message.type()==='warning'&&warningObservation(classes,config.baseURL,message);
-  if(rule){cell.observations.push({kind:rule.kind,classId:rule.id,owner:rule.owner,reason:redact(rule.reason),url:redact(message.location().url),message:redact(message.text()),outcome:'observed'});return;}
+  if(rule){cell.observations.push({kind:rule.kind,classId:rule.id,owner:rule.owner,sameSiteException:exception(rule),reason:redact(rule.reason),url:redact(message.location().url),message:redact(message.text()),outcome:'observed'});return;}
   const source=message.location(),target=message.type()==='warning'?cell.gaps:failures;
   target.push('console '+message.type()+' at '+redact(source.url||'[inline]')+':'+source.lineNumber+'; '+redact(message.text()));
  });
