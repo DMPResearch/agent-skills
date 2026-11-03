@@ -30,21 +30,24 @@ export async function prepareEngines(tasks,env){
  if(!adapter?.prepareEngine)return sessions;
  report.sharedEntry=[];
  for(const engine of new Set(tasks.filter(t=>t.state.id==='signed-in').map(t=>t.engine))){
-  let context,timer;
+  let context,timer,errors;
+  const runtime={screen:'shared-entry',state:'signed-in',engine,size:'shared-entry',failures:[],gaps:[],diagnostics:[]};
   const record={engine,status:'incomplete',scope:'engine'};report.sharedEntry.push(record);
   try{
    if(!launches.has(engine))launches.set(engine,browserModule[engine].launch().then(b=>{browsers.set(engine,b);return b;}));
    const browser=await launches.get(engine);context=await browser.newContext();context.setDefaultTimeout(10000);
+   errors=await observeErrors(context,runtime);errors.phase('shared-entry');
+   const closed=new AbortController();context.once('close',()=>closed.abort());const entryPace=key=>env.pace(key,{signal:closed.signal});
    await Promise.race([
-    adapter.prepareEngine({context,engine,config,pace:env.pace}),
+    adapter.prepareEngine({context,engine,config,pace:entryPace}),
     new Promise((_,reject)=>{timer=setTimeout(()=>{context.close().catch(()=>{});reject(Error('shared entry exceeded 60 second cap'));},60000);})
    ]);
    await verifyIdentity(adapter,{context,config,engine,state:'signed-in'},env.identities);
    const storage=await context.storageState();
    if(!storage.cookies.length&&!storage.origins.length)throw Error('shared entry produced no reusable browser session');
    sessions.set(engine,storage);record.status='pass';
-  }catch(error){record.error=redact(error.message);report.gaps.push('real shared entry unavailable: '+engine+'; '+record.error);report.blockedAuthEngines||=[];report.blockedAuthEngines.push(engine);}
-  finally{clearTimeout(timer);if(context)await context.close();}
+  }catch(error){errors?.caught(error);record.error=redact(error.message);report.gaps.push('real shared entry unavailable: '+engine+'; '+record.error);report.blockedAuthEngines||=[];report.blockedAuthEngines.push(engine);}
+  finally{clearTimeout(timer);await errors?.finish();record.diagnostics=runtime.diagnostics;if(runtime.failures.length){record.status='fail';report.runFailures||=[];report.runFailures.push(...runtime.failures);}if(context)await context.close();}
  }
  return sessions;
 }

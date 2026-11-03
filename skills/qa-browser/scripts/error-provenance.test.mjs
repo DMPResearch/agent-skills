@@ -24,3 +24,16 @@ for(const engine of ['chromium','webkit'])test(engine+' errors retain their emit
   assert.ok(failed.diagnostics.some(d=>d.kind==='caught-exception'&&d.phase==='entry'&&d.stack.includes('entry recipe refused')));
  }finally{for(const b of browsers.values())await b.close();server.closeAllConnections();await new Promise(r=>server.close(r));rmSync(out,{recursive:true,force:true});}
 });
+
+test('caught shared-entry failure keeps its stack and phase in the CLI report',{skip:!process.env.QA_PW_PATH,timeout:12000},async()=>{
+ const {writeFileSync,readFileSync}=await import('node:fs');const {fileURLToPath}=await import('node:url');const {command}=await import('./process.mjs');
+ const server=createServer((req,res)=>res.end('<body>Ready</body>'));await new Promise(r=>server.listen(0,'127.0.0.1',r));const out=mkdtempSync(join(tmpdir(),'qa-entry-error-'));
+ try{
+  const adapter=join(out,'adapter.mjs');writeFileSync(adapter,'export async function prepareEngine(){throw Error("shared setup refused");}');
+  const flow={id:'entry',entry:'entry.js',url:'/',main:true,states:['signed-in'],steps:[],controls:[],breaks:[]},file=join(out,'config.json');
+  writeFileSync(file,JSON.stringify({version:1,baseURL:`http://127.0.0.1:${server.address().port}`,adapter,playwrightPath:process.env.QA_PW_PATH,flows:[flow]}));
+  const result=await command(process.execPath,[fileURLToPath(new URL('./run.mjs',import.meta.url)),'--config',file,'--out',join(out,'result')],{timeout:8000});
+  const report=JSON.parse(readFileSync(join(out,'result','report.json'),'utf8'));assert.equal(result.code,2);
+  assert.ok(report.sharedEntry.every(entry=>entry.diagnostics?.some(d=>d.phase==='shared-entry'&&d.stack.includes('shared setup refused'))));
+ }finally{server.closeAllConnections();await new Promise(r=>server.close(r));rmSync(out,{recursive:true,force:true});}
+});
