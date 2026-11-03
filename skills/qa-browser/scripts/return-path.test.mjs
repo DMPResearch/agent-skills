@@ -43,10 +43,11 @@ test('CLI return proof must execute the actual callback state and cannot approve
 });
 
 test('return declarations require executed proof in the exact matrix and verified callback state',()=>{
- const step={action:'handoff',selector:'#go',origin:'https://identity.example.org',returnPath:{flow:'callback',state:'signed-in'}},flow={id:'entry',states:['signed-out'],steps:[],controls:[{steps:[step]}],breaks:[]},config={baseURL:'https://app.example.org',flows:[flow,{id:'callback',url:'/callback'}]};
+ const step={action:'handoff',selector:'#go',origin:'https://identity.example.org',returnPath:{flow:'callback',state:'signed-in'}},flow={id:'entry',states:['signed-out'],steps:[],controls:[{steps:[step]}],breaks:[]},config={baseURL:'https://app.example.org',flows:[flow,{id:'callback',url:'/callback',states:['signed-in'],steps:[{action:'visible',selector:'h1'}],controls:[],breaks:[]}]};
  const source=()=>{const cell={id:'entry',screen:'entry',state:'signed-out',engine:'chromium',theme:'light',size:'390x660',complete:true,failures:[],gaps:[]};declareReturnPaths(cell,flow,{id:'signed-out'});recordDepartures(cell,[step],[{type:'handoff',origin:step.origin}]);return cell;};
  const proof=()=>({id:'callback',screen:'callback',state:'signed-in',engine:'chromium',theme:'light',size:'390x660',complete:true,failures:[],gaps:[],frames:['callback.png'],entryFrame:'callback.png',sessionVerified:true,returnPathEntry:{verified:true,route:config.baseURL+'/callback'}});
  for(const change of [()=>null,p=>({...p,size:'1440x900'}),p=>({...p,state:'signed-out'}),p=>({...p,sessionVerified:false}),p=>({...p,returnPathEntry:undefined}),p=>({...p,gaps:['callback assertion unrun']})]){const cell=source(),candidate=change(proof());resolveReturnPaths({cells:[cell,...(candidate?[candidate]:[])]},config);assert.equal(cell.complete,false);assert.deepEqual(cell.gaps,['return path not proven: #go']);}
  const cell=source();resolveReturnPaths({cells:[cell,proof()]},config);assert.equal(cell.complete,true);assert.equal(cell.returnPaths[0].status,'proven');
  resolveReturnPaths({cells:[cell]},config);assert.equal(cell.complete,false,'a previous receipt is rechecked against the actual run');
+ const imported=source();delete imported.returnPaths;imported.gaps=[];resolveReturnPaths({cells:[imported,proof()]},config);assert.equal(imported.complete,false,'imported capture cannot omit a declared handoff return gap');assert.deepEqual(imported.gaps,['return path not proven: #go']);
 });

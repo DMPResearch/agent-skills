@@ -25,6 +25,7 @@ export function recordReturnEntry(cell,page,flow,state,config){
 }
 export function resolveReturnPaths(report,config){
  for(const cell of report.cells){
+  if(!cell.returnPaths){const flow=config.flows.find(f=>f.id===cell.screen);if(flow)declareReturnPaths(cell,flow,{id:cell.state});}
   for(const row of cell.returnPaths||[]){
    row.status=row.departure?'departure-only':'unrun';delete row.proofCell;delete row.route;if(!cell.gaps.includes(gap(row.control)))cell.gaps.push(gap(row.control));
    if(!row.departure||!row.proof)continue;
