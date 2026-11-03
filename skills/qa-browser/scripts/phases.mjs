@@ -1,6 +1,5 @@
 import {createHash} from 'node:crypto';
 import {join} from 'node:path';
-import {setTimeout as delay} from 'node:timers/promises';
 import {steps,inspect} from './browser.mjs';
 import {trackNavigations} from './navigation.mjs';
 import {observeRuntime,verifyIdentity} from './runtime.mjs';
@@ -8,13 +7,22 @@ import {observeErrors} from './errors.mjs';
 import {redact} from './contract.mjs';
 
 export function servicePacer(intervals={}){
- const next=new Map();
+ const queues=new Map();
  for(const [key,value]of Object.entries(intervals))if(!Number.isInteger(value)||value<1)throw Error('serviceIntervals.'+key+' must be a positive interval in milliseconds');
- return async(key,{signal}={})=>{
-  if(!Object.hasOwn(intervals,key))throw Error('serviceIntervals.'+key+' is required for paced service steps');
-  const now=Date.now(),slot=Math.max(now,next.get(key)||0);next.set(key,slot+intervals[key]);
-  if(slot>now)await delay(slot-now,undefined,{signal});
- };
+ return (key,{signal}={})=>new Promise((resolve,reject)=>{
+  if(!Object.hasOwn(intervals,key)){reject(Error('serviceIntervals.'+key+' is required for paced service steps'));return;}
+  if(signal?.aborted){reject(signal.reason||new DOMException('Aborted','AbortError'));return;}
+  const queue=queues.get(key)||{waiting:[],last:0};queues.set(key,queue);
+  const drain=()=>{
+   clearTimeout(queue.timer);
+   if(!queue.waiting.length)return;
+   const wait=queue.last+intervals[key]-Date.now();
+   if(wait>0){queue.timer=setTimeout(drain,wait);return;}
+   const next=queue.waiting.shift();next.signal?.removeEventListener('abort',next.abort);queue.last=Date.now();next.resolve();drain();
+  };
+  const item={resolve,signal,abort:()=>{const index=queue.waiting.indexOf(item);if(index<0)return;queue.waiting.splice(index,1);reject(signal.reason||new DOMException('Aborted','AbortError'));drain();}};
+  queue.waiting.push(item);signal?.addEventListener('abort',item.abort,{once:true});drain();
+ });
 }
 
 export async function prepareEngines(tasks,env){

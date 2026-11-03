@@ -298,7 +298,9 @@ its action; adapters receive the same `await pace("code-entry")` for service
 entry work outside steps. Reservations are shared across both workers and
 engines. Choose intervals from the service's actual development limits. Place
 pacing immediately before the service operation, not arbitrary assertions.
-Cancelled cells abort their queued step waits. Pacing does not extend cell or
+Cancelled cells abort their queued step waits and release unused reservations.
+Only actual admissions advance the minimum interval; cancelling a queued wait
+never shortens the interval between real operations. Pacing does not extend cell or
 capture caps; coverage that cannot finish within them stays incomplete. Use a
 standing provider when a pending service state must be reused across many
 cells without restarting the real operation.
