@@ -18,7 +18,7 @@ export function servicePacer(intervals={}){
    if(!queue.waiting.length)return;
    const wait=queue.last+intervals[key]-Date.now();
    if(wait>0){queue.timer=setTimeout(drain,wait);return;}
-   const next=queue.waiting.shift();next.signal?.removeEventListener('abort',next.abort);queue.last=Date.now();next.resolve();drain();
+   const next=queue.waiting.shift();next.signal?.removeEventListener('abort',next.abort);queue.last=Date.now();next.resolve(queue.last);drain();
   };
   const item={resolve,signal,abort:()=>{const index=queue.waiting.indexOf(item);if(index<0)return;queue.waiting.splice(index,1);reject(signal.reason||new DOMException('Aborted','AbortError'));drain();}};
   queue.waiting.push(item);signal?.addEventListener('abort',item.abort,{once:true});drain();

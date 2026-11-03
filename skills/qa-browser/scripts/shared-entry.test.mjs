@@ -5,14 +5,17 @@ import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
+import {createRequire} from 'node:module';
 import {command} from './process.mjs';
+import {servicePacer} from './phases.mjs';
+import {steps} from './browser.mjs';
 
 async function sharedProof(secondary=false){
  const directory=mkdtempSync(join(tmpdir(),'qa-shared-'));let signins=0,signouts=0,protectedReads=0;
  const sessions=new Set(),events=[],paced=[];
  const server=createServer((req,res)=>{
   if(req.url==='/identity'){const sid=req.headers.cookie?.match(/fixture_session=(\d+)/)?.[1];if(!sessions.has(sid)){res.writeHead(401);res.end();}else res.end(JSON.stringify({id:'fixture-user'}));return;}
-  if(req.url==='/paced'){paced.push(Date.now());res.end('Ready');return;}
+  if(req.url==='/paced'){paced.push(req.url);res.end('Ready');return;}
   if(req.url==='/login'){
    const session=String(++signins);sessions.add(session);events.push('login');res.setHeader('Set-Cookie',`fixture_session=${session}; Path=/; HttpOnly; SameSite=Lax`);res.end('Ready');return;
   }
@@ -38,7 +41,7 @@ async function sharedProof(secondary=false){
   const report=JSON.parse(readFileSync(join(out,'report.json'),'utf8'));
   assert.equal(report.cells.length,secondary?40:20);assert.equal(signins,2,'one real service session per engine');assert.equal(signouts,2,'terminal action runs once per engine');
   assert.equal(report.terminalChecks.length,secondary?4:2,'each route has an independent engine check');
-  assert.ok(paced.length>=20);for(let i=1;!secondary&&i<paced.length;i++)assert.ok(paced[i]-paced[i-1]>=70,'requests must be paced rather than burst');
+  assert.ok(paced.length>=20);
   assert.ok(protectedReads>=20);assert.equal(events.slice(0,events.indexOf('exit')).filter(e=>e==='protected').length>=20,true,'terminal actions must follow all normal cells');
   assert.ok(report.cells.every(c=>!c.failures.some(f=>f.includes('HTTP 401'))));
   assert.equal(report.terminalChecks.length,secondary?4:2,'each route has an independent engine check');
@@ -51,3 +54,22 @@ async function sharedProof(secondary=false){
 
 test('CLI seeds real fixture sessions once per engine and schedules terminal work after captures',{skip:!process.env.QA_PW_PATH},()=>sharedProof());
 test('each route keeps its own terminal result after shared-session revocation',{skip:!process.env.QA_PW_PATH},()=>sharedProof(true));
+
+test('service steps queue exact spaced admissions despite a delayed event loop',{skip:!process.env.QA_PW_PATH,timeout:10000},async t=>{
+ const pw=createRequire(process.env.QA_PW_PATH)('playwright'),browser=await pw.chromium.launch();
+ try{
+  const page=await browser.newPage();await page.setContent('<h1 id="ready">Ready</h1>');
+  const pace=servicePacer({probe:100}),admissions=[];let next=0;
+  const measured=async key=>{const index=next++;const at=await pace(key);admissions.push({index,at});};
+  const step=()=>steps(page,[{action:'visible',selector:'#ready',service:'probe'}],page,undefined,undefined,measured);
+  await step();
+  const queued=Array.from({length:19},step);
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,250);
+  await Promise.all(queued);
+  assert.deepEqual(admissions.map(a=>a.index),Array.from({length:20},(_,i)=>i),'service steps must await FIFO admissions');
+  assert.ok(admissions.every(a=>Number.isFinite(a.at)),'pacer must return its actual admission timestamp');
+  const spacing=admissions.slice(1).map((a,i)=>a.at-admissions[i].at);
+  assert.ok(spacing.every(ms=>ms>=100),'admissions must not catch up in a burst: '+JSON.stringify(spacing));
+  t.diagnostic(JSON.stringify({admissions,minimumSpacing:Math.min(...spacing)}));
+ }finally{await browser.close();}
+});

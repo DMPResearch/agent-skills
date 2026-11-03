@@ -295,7 +295,9 @@ It cannot borrow the first route's result or sign in again silently.
 `serviceIntervals:{"code-entry":30000}` declares the minimum admission interval
 in milliseconds for service work. A step may name `service:"code-entry"` before
 its action; adapters receive the same `await pace("code-entry")` for service
-entry work outside steps. Reservations are shared across both workers and
+entry work outside steps. `pace` resolves with its admission timestamp in epoch
+milliseconds, so callers can measure the admission rather than a later browser
+action or server callback. Reservations are shared across both workers and
 engines. Choose intervals from the service's actual development limits. Place
 pacing immediately before the service operation, not arbitrary assertions.
 Cancelled cells abort their queued step waits and release unused reservations.
@@ -341,8 +343,10 @@ cannot pass. Do not combine this flag with either resume flag.
 `--resume` (also `--resume-review`) reads the prior report and any review ledger from the same output
 directory, verifies source/config/build identity and current served bytes, then
 reviews the existing captures without provision, login, capture or cleanup
-replay. The deferred `visual review not run` gap from capture-only is removed
-after identity validation; all functional failures and other gaps remain.
+replay. The deferred `visual review not run` gap from capture-only remains
+until `report.review.complete` is true. Missing frames, browser launch errors
+and unfinished critic work retain it across resumes. All functional failures
+and other gaps remain.
 A `buildIdentity` adapter is imported only for its read-only byte
 verification during resume; its service setup and cleanup are not repeated. Successful critic batches require the same rules, references, tool
 implementation and exact frame hashes; failed batches rerun alone. A changed

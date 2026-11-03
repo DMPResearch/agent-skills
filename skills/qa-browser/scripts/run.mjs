@@ -97,7 +97,7 @@ try{
    [...previous.gaps,...report.gaps].includes('working tree differs from recorded head'))throw Error('review resume requires matching clean source, config and served build identities; run a fresh capture');
   if(!previous.cells?.length)throw Error('review resume has no prior captured cells');
   for(const field of ['cells','expectedCells','scope','servedBuild','sharedEntry','terminalChecks','standingEntry','runFailures','captureProvenance','runtimeDiagnostics','unrun'])if(previous[field]!==undefined)report[field]=previous[field];
-  report.gaps.push(...previous.gaps.filter(g=>!previous.captureOnly||g!=='visual review not run'));config.review={...config.review,resume:true,splitTimedOut:args.includes('--split-timed-out')};report.resumedFrom=previous.finished;
+  report.gaps.push(...previous.gaps);config.review={...config.review,resume:true,splitTimedOut:args.includes('--split-timed-out')};report.resumedFrom=previous.finished;
  }else{
  if(config.standingCrawl){
   const s=config.standingCrawl;
@@ -140,6 +140,7 @@ try{
  const b=await browserModule.chromium.launch();
  try{
   await critique(report,config,out,root,b);
+  if(report.review?.complete)report.gaps=report.gaps.filter(g=>g!=='visual review not run');
  }finally{await b.close();}
  }
 

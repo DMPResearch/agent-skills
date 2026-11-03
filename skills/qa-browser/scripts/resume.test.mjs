@@ -11,7 +11,7 @@ import {execFileSync} from 'node:child_process';
 import {command} from './process.mjs';
 import {matrix,breakKinds} from './contract.mjs';
 
-test('CLI resumes only failed review work without replaying capture or service setup',{skip:!process.env.QA_PW_PATH,timeout:30000},async()=>{
+test('CLI resumes only failed review work without replaying capture or service setup',{skip:!process.env.QA_PW_PATH,timeout:30000},async t=>{
  const dir=mkdtempSync(join(tmpdir(),'qa-resume-')),source=join(dir,'source'),bin=join(dir,'bin'),out=join(dir,'out');mkdirSync(source);mkdirSync(bin);
  const pw=createRequire(process.env.QA_PW_PATH)('playwright'),browser=await pw.chromium.launch();
  const server=createServer((req,res)=>res.end('<html><body>Preferences</body></html>'));await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -24,12 +24,13 @@ test('CLI resumes only failed review work without replaying capture or service s
   const produced=join(dir,'produced.txt'),raw=join(dir,'capture.json'),producer=join(dir,'produce.mjs');
   writeFileSync(producer,`import {writeFileSync,appendFileSync} from 'node:fs';appendFileSync(${JSON.stringify(produced)},'capture\\n');writeFileSync(${JSON.stringify(raw)},${JSON.stringify(JSON.stringify(capture))});`);
   const imageHashes=rows.map(r=>readFileSync(r.path).toString('base64'));
-  const critic=join(bin,'claude'),calls=join(dir,'calls.txt'),retryFlag=join(dir,'first-pass');
+  const critic=join(bin,'claude'),calls=join(dir,'calls.txt'),retryFlag=join(dir,'first-pass'),criticFailure=join(dir,'critic-failure');
   writeFileSync(critic,`#!/usr/bin/env node
 import {readFileSync,appendFileSync,existsSync} from 'node:fs';
 import {imageEvents} from ${JSON.stringify(fileURLToPath(new URL('./fixtures/critic.mjs',import.meta.url)))};
 const prompt=process.argv.at(-1).match(/^Read (.+) and return/)[1],manifest=JSON.parse(readFileSync(prompt,'utf8').split('\\n').at(-1));
 appendFileSync(${JSON.stringify(calls)},prompt+'\\n');
+if(existsSync(${JSON.stringify(criticFailure)}))process.exit(1);
 if(existsSync(${JSON.stringify(retryFlag)})&&prompt.includes('webkit-dark-1-sheets'))process.exit(124);
 const originals=new Set(${JSON.stringify(imageHashes)});
 const judgments={frames:manifest.map(f=>{const same=originals.has(readFileSync(f.path).toString('base64'));return {path:f.path,status:same?'pass':'fail',rules:same?[]:['overlapping-controls'],failures:same?[]:['Independent buttons overlap and obscure labels']};})};
@@ -38,7 +39,7 @@ console.log(JSON.stringify(judgments));
 `);chmodSync(critic,0o755);writeFileSync(retryFlag,'pending');
   const config={version:1,repoRoot:source,baseURL:`http://127.0.0.1:${server.address().port}`,playwrightPath:process.env.QA_PW_PATH,designRules:[join(source,'entry.js')],references:[rows[0].path],buildProbe:['/'],flows:[{id:'entry',entry:'entry.js',url:'/',main:true,states:['signed-out'],steps:[],controls:[],breaks:[]}],standingCrawl:{command:[process.execPath,producer],useResults:true,report:raw}};
   const configPath=join(dir,'config.json'),script=fileURLToPath(new URL('./run.mjs',import.meta.url));writeFileSync(configPath,JSON.stringify(config));
-  const run=flags=>command(process.execPath,[script,'--config',configPath,'--out',out,...flags],{cwd:dir,timeout:25000,env:{...process.env,PATH:bin+':'+process.env.PATH}});
+  const run=(flags,env={})=>command(process.execPath,[script,'--config',configPath,'--out',out,...flags],{cwd:dir,timeout:25000,env:{...process.env,PATH:bin+':'+process.env.PATH,...env}});
   await run([]);const first=JSON.parse(readFileSync(join(out,'report.json')));assert.equal(first.review.complete,false);
   const count=readFileSync(calls,'utf8').trim().split('\n').length;rmSync(retryFlag);
   const resumed=await run(['--resume-review']);
@@ -59,9 +60,28 @@ export async function cleanup(){appendFileSync(${JSON.stringify(cleanups)},'x');
   assert.ok(captureReport.gaps.includes('visual review not run'));
   assert.equal(captureReport.cells.length,20);assert.ok(captureReport.cells.every(c=>c.functional==='pass'));
   assert.equal(readFileSync(checks).length,1);assert.equal(readFileSync(cleanups).length,1);
+  const savedReport=readFileSync(join(out,'report.json')),frameBytes=readFileSync(rows[0].path);
+  for(const kind of ['missing-frame','browser-launch','critic-failure'])await t.test('incomplete resume retains visual marker: '+kind,async()=>{
+   writeFileSync(join(out,'report.json'),savedReport);
+   const env={};
+   if(kind==='missing-frame')rmSync(rows[0].path);
+   if(kind==='browser-launch')env.PLAYWRIGHT_BROWSERS_PATH=join(dir,'no-browser-installed');
+   if(kind==='critic-failure')writeFileSync(criticFailure,'fail');
+   try{
+    const failed=await run(['--resume'],env),report=JSON.parse(readFileSync(join(out,'report.json')));
+    assert.equal(failed.code,2);assert.notEqual(report.review?.complete,true);
+    if(kind==='missing-frame')assert.ok(report.gaps.some(g=>g.includes('missing frame file')));
+    if(kind==='browser-launch')assert.ok(report.gaps.some(g=>g.includes("Executable doesn't exist")));
+    if(kind==='critic-failure')assert.ok(report.gaps.some(g=>g.includes('critic batch incomplete')));
+    assert.ok(report.gaps.includes('visual review not run'),'unfinished review must retain its deferred marker');
+    const again=await run(['--resume'],env);assert.equal(again.code,2);
+    assert.ok(JSON.parse(readFileSync(join(out,'report.json'))).gaps.includes('visual review not run'),'repeated resume must retain the marker too');
+   }finally{writeFileSync(rows[0].path,frameBytes);rmSync(criticFailure,{force:true});}
+  });
+  writeFileSync(join(out,'report.json'),savedReport);
   const verified=await run(['--resume']);assert.equal(verified.code,0,'buildIdentity adapter must verify served bytes during resume');
   assert.ok(!JSON.parse(readFileSync(join(out,'report.json'))).gaps.includes('visual review not run'));
-  assert.equal(readFileSync(checks).length,2);assert.equal(readFileSync(cleanups).length,1,'resume must not repeat service cleanup');
+  assert.equal(readFileSync(checks).length,8);assert.equal(readFileSync(cleanups).length,1,'resume must not repeat service cleanup');
   assert.equal(readFileSync(produced,'utf8').trim().split('\n').length,2);
   const finalCount=readFileSync(calls,'utf8').trim().split('\n').length;
   writeFileSync(join(source,'entry.js'),'export const name="Changed source";');
