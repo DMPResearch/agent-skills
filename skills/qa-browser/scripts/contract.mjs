@@ -1,3 +1,4 @@
+import {validateCounterparts} from './counterparts.mjs';
 import {validateObservations} from './observations.mjs';
 export const breakKinds=['empty','invalid','double-submit','refresh','back-forward','signed-out','signed-in'];
 export const fullSizes=['360x640','390x660','412x620','412x660','390x844','430x932','344x880','755x1000','744x1133','820x1180','1024x768','1440x900'];
@@ -33,6 +34,7 @@ export function validate(c) {
    if(['fill','select','press','text','url','value','count'].includes(step.action)&&step.value===undefined&&!step.env)throw Error('step value required');
   }
  }
+ validateCounterparts(c);
  return c;
 }
 export function selectScope(flows,graph,globals=[]) {

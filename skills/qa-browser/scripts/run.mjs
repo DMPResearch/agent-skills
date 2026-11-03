@@ -6,6 +6,7 @@ import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 import {spawn,execFileSync} from 'node:child_process';
 import {validate,selectScope,matrix,redact} from './contract.mjs';
+import {resolveCounterparts} from './counterparts.mjs';
 import {observeBuild} from './provenance.mjs';
 import {prepareEngines,terminalQueue,servicePacer} from './phases.mjs';
 import {captureStanding} from './standing.mjs';
@@ -130,6 +131,7 @@ try{
  }));
  if(!stopping&&Date.now()<deadline)await captureStanding(tasks.filter(t=>t.flow.capture==='standing'),env);
  if(!stopping&&Date.now()<deadline)await terminals.run(env);
+ resolveCounterparts(report,config);
  for(const {flow}of scope)for(const [index,b]of flow.breaks.entries())if(b.state&&!b.notApplicable&&!report.cells.some(c=>c.screen===flow.id&&c.state===b.state&&c.controls.some(x=>x.index===index&&['pass','fail','shared'].includes(x.status))))report.gaps.push('declared break scope unrun: '+flow.id+' break '+index+' state '+b.state);
  if(report.cells.length!==tasks.length)report.gaps.push(`unrun cells: ${tasks.length-report.cells.length}`);
  }

@@ -126,8 +126,8 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   // Every form/control needs explicit expected outcomes. Never infer a valid service result.
   for(const control of flow.controls)if(!cell.controls.some(c=>c.selector===control.selector))cell.gaps.push('declared control not exercised: '+redact(control.selector));
   const required=breakKinds;
-  for(const kind of required)if(!flow.breaks.some(b=>b.kind===kind))cell.gaps.push('missing break contract: '+kind);
-  for(const auth of ['signed-out','signed-in'])if(!flow.states.some(s=>(typeof s==='string'?s:s.id)===auth))cell.gaps.push('missing real auth state: '+auth);
+  for(const kind of required)if(!flow.breaks.some(b=>b.kind===kind)&&!flow.authCounterparts?.[kind])cell.gaps.push('missing break contract: '+kind);
+  for(const auth of ['signed-out','signed-in'])if(!flow.states.some(s=>(typeof s==='string'?s:s.id)===auth))cell.gaps.push(flow.authCounterparts?.[auth]?'auth counterpart pending: '+auth:'missing real auth state: '+auth);
   for(const [index,b]of flow.breaks.entries()){
    if(b.state&&b.state!==state.id){cell.controls.push({break:b.kind,index,status:'unrun',scope:b.state,reason:'declared for another auth state'});continue;}
    if(applicableBreak(b,state.id)&&!b.notApplicable&&!planned.has(index))cell.gaps.push('break target or alias never reached: '+b.kind+' '+redact(b.coverageTarget||b.target||'[missing target]'));
