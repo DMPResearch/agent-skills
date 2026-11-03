@@ -49,7 +49,7 @@ export async function captureStanding({context,flow,state,engine,matrix,config,o
 test('standing entry refuses missing and duplicate coverage without replaying preparation',{skip:!process.env.QA_PW_PATH,timeout:12000},async()=>{
  const {createRequire}=await import('node:module');const {captureStanding}=await import('./standing.mjs');
  const pw=createRequire(process.env.QA_PW_PATH)('playwright'),out=mkdtempSync(join(tmpdir(),'qa-standing-negative-')),browsers=new Map(),launches=new Map();
- try{for(const variant of ['missing-begin','duplicate-begin','missing-result','missing-terminal']){
+ try{for(const variant of ['missing-begin','duplicate-begin','missing-result','missing-terminal','summary-incomplete']){
   let preparations=0;const flow={id:variant,url:'/',steps:[],states:['signed-out'],breaks:[],controls:variant==='missing-terminal'?[{selector:'#exit',terminal:true,safe:true,steps:[]}]:[]};
   const tasks=['390x660','1440x900'].map(size=>({flow,state:{id:'signed-out'},engine:'chromium',theme:'light',size})),report={cells:[],gaps:[]};
   const adapter={captureStanding:async({context,beginCell,matrix})=>{
@@ -59,9 +59,28 @@ test('standing entry refuses missing and duplicate coverage without replaying pr
     if(variant!=='missing-begin'||index===0)await beginCell(cell);if(variant==='duplicate-begin')await beginCell(cell);
     const [width,height]=cell.size.split('x').map(Number);await page.setViewportSize({width,height});const path=join(out,variant+'-'+cell.size+'.png');await page.screenshot({path});
     const row={...cell,screen:flow.id,state:'signed-out',path,failures:[]};data.results.push(row);data.edges.push({...row,controls:[],checks:['empty','invalid','double-submit','refresh','back-forward','signed-out','signed-in'].map(kind=>({kind,pass:true}))});
-   }if(variant==='missing-result')data.results.pop();return data;
+   }if(variant==='missing-result')data.results.pop();if(variant==='summary-incomplete')data.summary.complete=false;return data;
   }};
   await captureStanding(tasks,{config:{baseURL:'https://app.example.invalid'},report,adapter,browsers,launches,browserModule:pw,out,pace:async()=>{},sessions:new Map(),terminals:{defer(){throw Error('unbound terminal must not run');}}});
   assert.equal(preparations,1);assert.ok(report.gaps.length||report.cells.some(c=>c.gaps.length),variant);assert.ok(report.cells.every(c=>!c.complete),variant+' borrowed incomplete coverage');
  }}finally{for(const browser of browsers.values())await browser.close();rmSync(out,{recursive:true,force:true});}
+});
+
+
+for(const variant of ['runtime-error','slow-prepare'])test('standing provider preserves its functional verdict and cell bound: '+variant,{skip:!process.env.QA_PW_PATH,timeout:10000},async()=>{
+ const {createRequire}=await import('node:module');const {captureStanding}=await import('./standing.mjs');
+ const pw=createRequire(process.env.QA_PW_PATH)('playwright'),browser=await pw.chromium.launch(),out=mkdtempSync(join(tmpdir(),'qa-standing-bound-')),browsers=new Map([['chromium',browser]]),launches=new Map([['chromium',Promise.resolve(browser)]]);
+ try{
+  const flow={id:variant,url:'/',states:['signed-out'],steps:[],controls:[],breaks:[]},task={flow,state:{id:'signed-out'},engine:'chromium',theme:'light',size:'390x660'},report={cells:[],gaps:[]};
+  const adapter={captureStanding:async({context,beginCell})=>{
+   if(variant==='slow-prepare')await new Promise(r=>setTimeout(r,400));await beginCell(task);
+   const page=await context.newPage();await page.setViewportSize({width:390,height:660});await page.setContent('<html style="background:white;color:black"><body>Ready</body></html>');
+   if(variant==='runtime-error')await page.evaluate(()=>setTimeout(()=>{throw Error('standing runtime failed')},0));
+   const path=join(out,variant+'.png');await page.screenshot({path});const row={screen:flow.id,state:'signed-out',engine:'chromium',theme:'light',size:'390x660',path,failures:[]};
+   return {summary:{complete:true},results:[row],interactions:[],edges:[{...row,controls:[],checks:['empty','invalid','double-submit','refresh','back-forward','signed-out','signed-in'].map(kind=>({kind,pass:true}))}]};
+  }};
+  const start=Date.now();await captureStanding([task],{config:{baseURL:'https://app.example.invalid',...(variant==='slow-prepare'?{cellTimeoutMs:50}:{})},report,adapter,browsers,launches,browserModule:pw,out,pace:async()=>{},sessions:new Map()});
+  if(variant==='runtime-error'){assert.ok(report.cells[0].failures.some(f=>f.includes('standing runtime failed')));assert.equal(report.cells[0].functional,'fail');}
+  else{assert.ok(Date.now()-start<300,'standing preparation bypassed the configured cell bound');assert.ok(report.gaps.some(g=>/cap|bound/.test(g)));assert.equal(report.cells.length,0);}
+ }finally{await browser.close();rmSync(out,{recursive:true,force:true});}
 });

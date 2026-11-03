@@ -425,7 +425,8 @@ crawler. It returns the existing standing-crawl `summary/results/edges/interacti
 shape with exact `state` on each result and unique PNG paths.
 
 Await `beginCell({theme,size})` before each supplied matrix cell. The tool validates
-exact coverage, enforces the existing 60-second cell and 30-minute run bounds,
+exact coverage, enforces the existing 60-second preparation/cell and 30-minute run bounds
+(including session verification, and honoring a lower `cellTimeoutMs`),
 and verifies signed-in identity for every cell. Missing, duplicate or unexpected
 keys refuse the provider result. The provider applies the declared theme,
 viewport, masking and flow assertions and supplies real control/break outcomes.
