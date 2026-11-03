@@ -78,7 +78,8 @@ export function terminalQueue(){
      isolated=Boolean(adapter?.prepareTerminal);if(isolated&&!adapter.cleanupTerminal)throw Error('prepareTerminal requires cleanupTerminal for its isolated real session');
      record.isolation=isolated?'adapter-session':'shared-entry';
      context=await browsers.get(engine).newContext({viewport:{width,height},colorScheme:theme,storageState:!isolated&&state.id==='signed-in'?sessions.get(engine):undefined});context.setDefaultTimeout(Math.min(config.actionTimeoutMs||10000,10000));
-     errors=await observeErrors(context,runtime,runtime.failures,config);errors.phase('terminal-entry');
+     const observationConfig={...config,observations:flow.observations??config.observations};
+     errors=await observeErrors(context,runtime,runtime.failures,observationConfig);errors.phase('terminal-entry');
      const closed=new AbortController();context.once('close',()=>closed.abort());terminalPace=key=>env.pace(key,{signal:closed.signal});
      timer=setTimeout(()=>context.close().catch(()=>{}),60000);
      if(config.themeInit)await context.addInitScript(config.themeInit.replaceAll('THEME',JSON.stringify(theme)));
@@ -86,7 +87,7 @@ export function terminalQueue(){
      if(isolated)await adapter.prepareTerminal({context,config,flow,state:state.id,engine,recipe,kind,pace:terminalPace});
      if(state.id==='signed-in')await verifyIdentity(adapter,{context,config,flow,state:state.id,engine},isolated?new Map():env.identities);
      const page=await context.newPage(),root=flow.frame?page.frameLocator(flow.frame):page,navigation=trackNavigations(page);
-     observer=observeRuntime(page,runtime,{...config,observations:flow.observations});
+     observer=observeRuntime(page,runtime,observationConfig);
      await adapter?.reset?.({page,flow,state:state.id,config,pace:terminalPace});
      await navigation.run(()=>page.goto(new URL(flow.url,config.baseURL).href,{waitUntil:'load'}));
      await adapter?.enter?.({page,flow,state:state.id,pace:terminalPace});

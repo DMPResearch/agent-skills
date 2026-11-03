@@ -19,7 +19,8 @@ export async function captureStanding(tasks,env){
    if(!env.launches.has(engine))env.launches.set(engine,env.browserModule[engine].launch().then(b=>{browsers.set(engine,b);return b;}));
    const browser=await env.launches.get(engine);context=await browser.newContext({storageState:state.id==='signed-in'?env.sessions.get(engine):undefined});context.setDefaultTimeout(10000);
    const closed=new AbortController();context.once('close',()=>closed.abort());const runPace=key=>pace(key,{signal:closed.signal});
-   errors=await observeErrors(context,runtime,runtime.failures,config);errors.phase('standing-entry');observer=observeRuntime(context,runtime,{...config,observations:flow.observations});env.buildObserver?.attach(context);
+   const observationConfig={...config,observations:flow.observations??config.observations};
+   errors=await observeErrors(context,runtime,runtime.failures,observationConfig);errors.phase('standing-entry');observer=observeRuntime(context,runtime,observationConfig);env.buildObserver?.attach(context);
    let rejectCell;const cellDeadline=new Promise((_,reject)=>{rejectCell=reject;});const cellLimit=Math.max(1,Math.min(config.cellTimeoutMs||60000,60000));
    const arm=label=>{clearTimeout(cellTimer);cellTimer=setTimeout(()=>{const message='standing '+label+' exceeded '+cellLimit+' ms cell cap';runtime.gaps.push(message);context.close().catch(()=>{});rejectCell(Error(message));},cellLimit);};
    const wanted=new Set(group.map(t=>t.theme+'/'+t.size)),begun=new Set();

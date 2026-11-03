@@ -540,6 +540,10 @@ Coverage checks without a retained document are also unknown, never guessed.
 
 ### Passive probe-error receipts
 
+Native cells, standing capture and terminal checks pass the same effective
+observation rules to runtime and page-error observers. A flow's `observations`
+replaces run-level rules for that flow; when absent it inherits them.
+
 An existing external-request class may receive a `page-error` receipt only when
 its exact URL appears in the error message, the class uniquely matches that URL,
 method and resource type, and Playwright observed one failed request to that same

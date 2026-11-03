@@ -22,7 +22,8 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   context=await browser.newContext({viewport:{width,height},colorScheme:theme,deviceScaleFactor:1,storageState:state.id==='signed-in'?sessions?.get(engine):undefined});
   const closed=new AbortController();context.once('close',()=>closed.abort());
   if(pace){const runPace=pace;pace=key=>runPace(key,{signal:closed.signal});}
-  errors=await observeErrors(context,cell,observed,config);
+  const observationConfig={...config,observations:flow.observations??config.observations};
+  errors=await observeErrors(context,cell,observed,observationConfig);
   buildObserver?.attach(context);
   cellTimer=setTimeout(()=>{cell.gaps.push('cell exceeded 60 second cap');context.close().catch(()=>{});},Math.min(config.cellTimeoutMs||60000,60000));
   context.setDefaultTimeout(Math.min(config.actionTimeoutMs||10000,10000));
@@ -40,7 +41,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    catch(error){errors.caught(error);cell.gaps.push('signed-in session identity unavailable: '+redact(error.message));return;}
   }
   let page,surface;
-  const open=async()=>{page=await context.newPage();surface=flow.frame?page.frameLocator(flow.frame):page;runtime=observeRuntime(page,cell,{...config,observations:flow.observations},observed);navigation=trackNavigations(page);};
+  const open=async()=>{page=await context.newPage();surface=flow.frame?page.frameLocator(flow.frame):page;runtime=observeRuntime(page,cell,observationConfig,observed);navigation=trackNavigations(page);};
   await open();
   const act=async(items,target)=>{const effects=await steps(page,items,surface,target,navigation.run,pace);recordDepartures(cell,items,effects);return effects;};
   let entryBinding;
