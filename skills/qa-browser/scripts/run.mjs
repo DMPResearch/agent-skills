@@ -13,11 +13,12 @@ import {runCell} from './cell.mjs';
 import {importCrawl} from './external.mjs';
 import {command,critique,save} from './report.mjs';
 
-const args=process.argv.slice(2),option=name=>args[args.indexOf(name)+1],resumeReview=args.includes('--resume-review');
-if(!args.includes('--config')){console.error('Usage: run.mjs --config /repo/qa-browser.json --out /evidence [--pr-base REF] [--resume-review]');process.exit(2);}
+const args=process.argv.slice(2),option=name=>args[args.indexOf(name)+1],resumeReview=args.includes('--resume')||args.includes('--resume-review'),captureOnly=args.includes('--capture-only');
+if(!args.includes('--config')){console.error('Usage: run.mjs --config /repo/qa-browser.json --out /evidence [--pr-base REF] [--capture-only | --resume]');process.exit(2);}
 const configPath=resolve(option('--config')),root=dirname(configPath),out=resolve(args.includes('--out')?option('--out'):join(root,'.qa-browser'));
 mkdirSync(out,{recursive:true});
 const report={version:1,status:'incomplete',started:new Date().toISOString(),cells:[],gaps:[],scope:[],sheets:[],unrun:['Independent Codex code critique belongs to orchestrator cross-review; screenshot lane is Opus-only','native Safari and Android Chrome are separate verify-live lanes']};
+if(captureOnly){report.captureOnly=true;report.gaps.push('visual review not run');}
 let buildObserver,config,browserModule,adapter,buildAdapter,startedServer,deadline,timer,stopping=false;
 const stop=()=>{stopping=true;report.gaps.push('QA run cancelled; remainder unrun');for(const b of browsers.values())b.close().catch(()=>{});};
 process.once('SIGTERM',stop);process.once('SIGINT',stop);
@@ -25,6 +26,7 @@ const browsers=new Map(), launches=new Map();
 const json=path=>JSON.parse(readFileSync(resolve(root,path),'utf8'));
 const git=(...a)=>execFileSync('git',a,{cwd:resolve(root,config?.repoRoot||'.'),encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
 try{
+ if(captureOnly&&resumeReview)throw Error('cannot combine --capture-only with --resume or --resume-review');
  config=json(configPath);
  if(typeof config.flows==='string')config.flows=json(config.flows);
  validate(config);
@@ -95,7 +97,7 @@ try{
    [...previous.gaps,...report.gaps].includes('working tree differs from recorded head'))throw Error('review resume requires matching clean source, config and served build identities; run a fresh capture');
   if(!previous.cells?.length)throw Error('review resume has no prior captured cells');
   for(const field of ['cells','expectedCells','scope','servedBuild','sharedEntry','terminalChecks','standingEntry','runFailures','captureProvenance','runtimeDiagnostics','unrun'])if(previous[field]!==undefined)report[field]=previous[field];
-  report.gaps.push(...previous.gaps);config.review={...config.review,resume:true,splitTimedOut:args.includes('--split-timed-out')};report.resumedFrom=previous.finished;
+  report.gaps.push(...previous.gaps.filter(g=>!previous.captureOnly||g!=='visual review not run'));config.review={...config.review,resume:true,splitTimedOut:args.includes('--split-timed-out')};report.resumedFrom=previous.finished;
  }else{
  if(config.standingCrawl){
   const s=config.standingCrawl;
@@ -134,10 +136,12 @@ try{
  if(!config.standingCrawl?.useResults){report.servedBuild=await buildObserver.finish();if(report.servedBuild.assets.length&&!report.build)report.build=report.servedBuild;if(report.servedBuild.unreadable.length)report.gaps.push('served build bytes unverified: '+report.servedBuild.unreadable.map(redact).join(', '));}
  }
  clearTimeout(timer);
+ if(!captureOnly){
  const b=await browserModule.chromium.launch();
  try{
   await critique(report,config,out,root,b);
  }finally{await b.close();}
+ }
 
  }
 }catch(error){report.gaps.push(redact(error.message));}

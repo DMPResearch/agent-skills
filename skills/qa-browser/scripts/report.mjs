@@ -16,7 +16,7 @@ export async function critique(report,config,out,cwd,browser){
 }
 
 export function save(report,out){
- report.status=report.notApplicable?'not-applicable':report.runFailures?.length?'fail':verdict(report.cells,report.gaps);
+ report.status=report.notApplicable&&!report.captureOnly?'not-applicable':report.runFailures?.length?'fail':verdict(report.cells,report.gaps);
  report.issues=report.cells.flatMap(c=>[...c.failures,...(c.visualFailures||[])].map(failure=>({rule:/image/.test(failure)?'TEST-016':/console|HTTP|request|page error/.test(failure)?'proposed:repo-browser-runtime':'TEST-007',severity:'major',screen:c.screen,browser:c.engine,browserVersion:c.browserVersion||'unknown',size:c.size,theme:c.theme,state:c.state,repro:c.repro,expected:'Real flow outcome and readable, unobstructed rendered UI',actual:failure,frames:c.frames})));
  const byScreen=Object.groupBy(report.cells,c=>c.screen);
  report.screens=Object.entries(byScreen).map(([screen,cells])=>({screen,status:verdict(cells,[]),functional:cells.every(c=>(c.functional||(!c.failures.length&&c.complete?'pass':'fail'))==='pass')?'pass':'fail',slop:cells.some(c=>c.critic==='fail')?'fail':cells.every(c=>c.critic==='pass')?'pass':'incomplete',cells:cells.length,frames:cells.flatMap(c=>c.frames)}));

@@ -331,10 +331,19 @@ request cannot hold the runner indefinitely. An unresolved request records a
 gap with its method and URL. It never becomes an assumed success when the
 context closes. Terminal entry work is drained before the terminal action too.
 
-`--resume-review` reads the prior report and review ledger from the same output
+`--capture-only` runs the unchanged capture matrix, functional checks, shared
+entry and terminal phases, and cleanup, without launching the review browser
+or calling a critic. Its report records `captureOnly:true` and the gap
+`visual review not run`. Status is `fail` (exit 1) if functional failures were
+found, otherwise `incomplete` (exit 2), including a non-UI PR selection. It
+cannot pass. Do not combine this flag with either resume flag.
+
+`--resume` (also `--resume-review`) reads the prior report and any review ledger from the same output
 directory, verifies source/config/build identity and current served bytes, then
 reviews the existing captures without provision, login, capture or cleanup
-replay. A `buildIdentity` adapter is imported only for its read-only byte
+replay. The deferred `visual review not run` gap from capture-only is removed
+after identity validation; all functional failures and other gaps remain.
+A `buildIdentity` adapter is imported only for its read-only byte
 verification during resume; its service setup and cleanup are not repeated. Successful critic batches require the same rules, references, tool
 implementation and exact frame hashes; failed batches rerun alone. A changed
 identity requires a fresh capture run. A missing calibration judgment or a

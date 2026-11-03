@@ -51,8 +51,16 @@ console.log(JSON.stringify(judgments));
 export async function buildIdentity({config}){appendFileSync(${JSON.stringify(checks)},'x');const response=await fetch(config.baseURL);const id=createHash('sha256').update(await response.text()).digest('hex');if(!response.ok||id!==${JSON.stringify(expected)})throw Error('served fixture differs');return {kind:'verified-fixture',id};}
 export async function cleanup(){appendFileSync(${JSON.stringify(cleanups)},'x');}`);
   config.adapter=adapter;delete config.buildProbe;writeFileSync(configPath,JSON.stringify(config));
-  await run([]);assert.equal(readFileSync(checks).length,1);assert.equal(readFileSync(cleanups).length,1);
-  const verified=await run(['--resume-review']);assert.equal(verified.code,0,'buildIdentity adapter must verify served bytes during resume');
+  const beforeCapture=readFileSync(calls,'utf8');
+  const captured=await run(['--capture-only']);
+  const captureReport=JSON.parse(readFileSync(join(out,'report.json')));
+  assert.equal(readFileSync(calls,'utf8'),beforeCapture,'capture-only must not invoke a critic');
+  assert.equal(captured.code,2);assert.equal(captureReport.status,'incomplete');
+  assert.ok(captureReport.gaps.includes('visual review not run'));
+  assert.equal(captureReport.cells.length,20);assert.ok(captureReport.cells.every(c=>c.functional==='pass'));
+  assert.equal(readFileSync(checks).length,1);assert.equal(readFileSync(cleanups).length,1);
+  const verified=await run(['--resume']);assert.equal(verified.code,0,'buildIdentity adapter must verify served bytes during resume');
+  assert.ok(!JSON.parse(readFileSync(join(out,'report.json'))).gaps.includes('visual review not run'));
   assert.equal(readFileSync(checks).length,2);assert.equal(readFileSync(cleanups).length,1,'resume must not repeat service cleanup');
   assert.equal(readFileSync(produced,'utf8').trim().split('\n').length,2);
   const finalCount=readFileSync(calls,'utf8').trim().split('\n').length;

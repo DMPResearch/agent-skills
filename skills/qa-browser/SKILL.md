@@ -25,7 +25,11 @@ server. A configured start command owns only the process it starts.
    reads a needed value into memory only immediately before use.
 2. Run `node <skill>/scripts/run.mjs --config /repo/qa-browser.json --out /evidence`.
    Playwright resolves from the target repo or its explicit `playwrightPath`;
-   nothing is installed. Use `--resume-review` with the same config/output to
+   nothing is installed. Add `--capture-only` to run capture and functional
+   checks without any critic call. This exits 2 with `incomplete` and the reason
+   `visual review not run`, or exits 1 with `fail` for a functional failure;
+   it never passes. Use `--resume` (or `--resume-review`) with the same config/output to
+   review saved captures after capture-only, or to
    retry only unfinished critic work without replaying real services. Add
    `--split-timed-out` on resume to split timed-out batches while retaining
    completed receipts. Changed
@@ -49,7 +53,7 @@ server. A configured start command owns only the process it starts.
    Existing standing crawls can also use the optional external command contract,
    including their real auth and cleanup. Do not copy their product logic into
    this public skill. Their nonzero exit is a failed/incomplete check.
-5. Check Claude B capacity using cross-review's rules. Review runs separately
+5. Unless running capture-only, check Claude B capacity using cross-review's rules. Review runs separately
    from the capture cap: sequential Opus calls, ten minutes each, one retry.
    First read every frame at the shortest phone and widest desktop for each
    screen, declared auth/data state, engine and theme at full size. Missing
@@ -111,4 +115,5 @@ observe first-party document/script/stylesheet bytes. Standing providers supply
 that same observed fingerprint in `summary.provenance.build`. A served-content
 fingerprint never claims production-build validation. Run the CLI to create each
 proof report; do not hand-assemble head, build or visual verdicts afterward.
-A PR with only known non-UI changes exits 0 with `not-applicable`, no browser run.
+A PR with only known non-UI changes exits 0 with `not-applicable`, no browser run;
+capture-only still exits 2 with `incomplete`.
