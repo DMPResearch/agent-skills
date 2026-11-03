@@ -76,7 +76,7 @@ export function terminalQueue(){
      const [width,height]=size.split('x').map(Number);
      isolated=Boolean(adapter?.prepareTerminal);if(isolated&&!adapter.cleanupTerminal)throw Error('prepareTerminal requires cleanupTerminal for its isolated real session');
      record.isolation=isolated?'adapter-session':'shared-entry';
-     context=await browsers.get(engine).newContext({viewport:{width,height},colorScheme:theme,storageState:!isolated&&state.id==='signed-in'?sessions.get(engine):undefined});context.setDefaultTimeout(10000);
+     context=await browsers.get(engine).newContext({viewport:{width,height},colorScheme:theme,storageState:!isolated&&state.id==='signed-in'?sessions.get(engine):undefined});context.setDefaultTimeout(Math.min(config.actionTimeoutMs||10000,10000));
      errors=await observeErrors(context,runtime,runtime.failures,config);errors.phase('terminal-entry');
      const closed=new AbortController();context.once('close',()=>closed.abort());terminalPace=key=>env.pace(key,{signal:closed.signal});
      timer=setTimeout(()=>context.close().catch(()=>{}),60000);

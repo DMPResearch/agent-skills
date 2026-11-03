@@ -22,3 +22,9 @@ test('canonical own document origins remain failures; foreign findings are visib
   assert.ok(saved.foreignFindings.some(f=>f.message==='Foreign overlap'&&!f.affectsVerdict));
  }finally{rmSync(out,{recursive:true,force:true});}
 });
+
+test('unavailable document metadata cannot erase an inspection failure',async()=>{
+ const {documentOf}=await import('./findings.mjs');
+ const result=documentOf({page(){throw Error('Frame metadata unavailable');}});
+ assert.equal(result.origin,'unknown');assert.equal(result.url,'unknown');
+});
