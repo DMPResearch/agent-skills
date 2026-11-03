@@ -450,3 +450,20 @@ The adapter paces actual preparation immediately before the service operation
 and removes only its own session/data. This costs one explicitly isolated real
 entry per conflicting terminal recipe, not one per matrix cell. Without these
 hooks, existing shared-session semantics and unavailable checks remain visible.
+
+### Binding critic judgments to image reads
+
+The subscription CLI streams read-only tool receipts. The critic opens one
+review image, receives its image result and emits `FRAME {judgment}` before
+opening the next. Every frame in a sheet is bound to that sheet’s exact captions
+before another sheet. The final JSON repeats those identical judgments. The tool
+refuses missing image deliveries, swapped paths, missing/duplicate bindings or
+changed final judgments, even when the final answer claims a calibration catch.
+Canary validation still requires the matching structured overlap verdict.
+
+This is one call per existing batch, with serialized image reads inside it.
+It adds no planned critic calls or matrix reductions. Serialized tool turns add
+latency; real fit under the existing ten-minute call cap must be measured.
+Structured result and binding receipts are redacted by field/value before JSON
+serialization, including nested result JSON. Exact artifact identities survive;
+short credentials, compound sensitive keys and headers do not.

@@ -44,7 +44,9 @@ server. A configured start command owns only the process it starts.
    input. Breaks replay each reached graph state and bind aliases to the named
    element. A signed-in cell requires the adapter’s verified active identity.
    Capture entry, control, overlay and break states; inspect every frame.
-   Existing standing crawls run through the optional external command contract,
+   Persistent entries use `capture:"standing"` with the adapter’s in-process
+   standing provider, preserving one real pending state across its exact matrix.
+   Existing standing crawls can also use the optional external command contract,
    including their real auth and cleanup. Do not copy their product logic into
    this public skill. Their nonzero exit is a failed/incomplete check.
 5. Check Claude B capacity using cross-review's rules. Review runs separately
@@ -66,6 +68,8 @@ server. A configured start command owns only the process it starts.
    belongs to the orchestrator's independent cross-review of the product diff,
    where source and service contracts are available; screenshots cannot establish
    code findings. This runner never claims that code-review gate passed.
+   The critic reads one image and binds its exact path/judgment before opening
+   the next; streamed image deliveries and final bindings must agree.
    Each batch records its exact frame/screen coverage and attempts in
    `review-ledger.json`; incomplete or duplicate coverage never passes.
    Completed batches can be reused only with matching source/build/rules and

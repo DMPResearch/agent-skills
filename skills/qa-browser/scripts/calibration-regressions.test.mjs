@@ -5,7 +5,7 @@ import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {runReview} from './review.mjs';
+import {runReview} from './fixtures/critic.mjs';
 const enabled=!!process.env.QA_PW_PATH;
 const hash=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
 async function fixture(broken,check){

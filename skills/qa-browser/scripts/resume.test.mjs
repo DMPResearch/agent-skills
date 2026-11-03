@@ -27,11 +27,14 @@ test('CLI resumes only failed review work without replaying capture or service s
   const critic=join(bin,'claude'),calls=join(dir,'calls.txt'),retryFlag=join(dir,'first-pass');
   writeFileSync(critic,`#!/usr/bin/env node
 import {readFileSync,appendFileSync,existsSync} from 'node:fs';
+import {imageEvents} from ${JSON.stringify(fileURLToPath(new URL('./fixtures/critic.mjs',import.meta.url)))};
 const prompt=process.argv.at(-1).match(/^Read (.+) and return/)[1],manifest=JSON.parse(readFileSync(prompt,'utf8').split('\\n').at(-1));
 appendFileSync(${JSON.stringify(calls)},prompt+'\\n');
 if(existsSync(${JSON.stringify(retryFlag)})&&prompt.includes('webkit-dark-1-sheets'))process.exit(124);
 const originals=new Set(${JSON.stringify(imageHashes)});
-console.log(JSON.stringify({frames:manifest.map(f=>{const same=originals.has(readFileSync(f.path).toString('base64'));return {path:f.path,status:same?'pass':'fail',rules:same?[]:['overlapping-controls'],failures:same?[]:['Independent buttons overlap and obscure labels']};})}));
+const judgments={frames:manifest.map(f=>{const same=originals.has(readFileSync(f.path).toString('base64'));return {path:f.path,status:same?'pass':'fail',rules:same?[]:['overlapping-controls'],failures:same?[]:['Independent buttons overlap and obscure labels']};})};
+for(const event of imageEvents(prompt,judgments.frames))console.log(JSON.stringify(event));
+console.log(JSON.stringify(judgments));
 `);chmodSync(critic,0o755);writeFileSync(retryFlag,'pending');
   const config={version:1,repoRoot:source,baseURL:`http://127.0.0.1:${server.address().port}`,playwrightPath:process.env.QA_PW_PATH,designRules:[join(source,'entry.js')],references:[rows[0].path],buildProbe:['/'],flows:[{id:'entry',entry:'entry.js',url:'/',main:true,states:['signed-out'],steps:[],controls:[],breaks:[]}],standingCrawl:{command:[process.execPath,producer],useResults:true,report:raw}};
   const configPath=join(dir,'config.json'),script=fileURLToPath(new URL('./run.mjs',import.meta.url));writeFileSync(configPath,JSON.stringify(config));

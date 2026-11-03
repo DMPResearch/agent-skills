@@ -4,7 +4,7 @@ import {createRequire} from 'node:module';
 import {mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {runReview,reviewBatches} from './review.mjs';
+import {runReview,reviewBatches} from './fixtures/critic.mjs';
 
 const enabled=!!process.env.QA_PW_PATH;
 async function fixture(check){

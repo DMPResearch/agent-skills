@@ -4,7 +4,7 @@ import {createRequire} from 'node:module';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {runReview} from './review.mjs';
+import {runReview} from './fixtures/critic.mjs';
 
 test('a lone phone defect is caught by mandatory full reads without any sheet flag',{skip:!process.env.QA_PW_PATH},async()=>{
  const pw=createRequire(process.env.QA_PW_PATH)('playwright'),browser=await pw.chromium.launch(),out=mkdtempSync(join(tmpdir(),'qa-mandatory-'));

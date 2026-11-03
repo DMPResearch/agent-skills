@@ -21,7 +21,7 @@ test('real sheets review sequentially, retry once and resolve flagged screens at
  const {createRequire}=await import('node:module');
  const {mkdtempSync,readFileSync,rmSync}=await import('node:fs');
  const {tmpdir}=await import('node:os');const {join}=await import('node:path');
- const {runReview}=await import('./review.mjs');
+ const {runReview}=await import('./fixtures/critic.mjs');
  const pw=createRequire(process.env.QA_PW_PATH)('playwright'),browser=await pw.chromium.launch(),out=mkdtempSync(join(tmpdir(),'qa-review-'));
  try{
   const page=await browser.newPage({viewport:{width:390,height:660}});await page.setContent('<h1>Settings</h1>');

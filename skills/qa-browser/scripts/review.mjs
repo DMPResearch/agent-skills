@@ -3,7 +3,8 @@ import {createHash,randomUUID,randomInt} from 'node:crypto';
 import {join,basename} from 'node:path';
 import {command} from './process.mjs';
 import {reviewBatches,reviewPlan,frameGroup} from './review-plan.mjs';
-import {redact} from './contract.mjs';
+import {reviewAudit} from './review-audit.mjs';
+import {redact,redactStructured} from './contract.mjs';
 
 export {reviewBatches,reviewPlan} from './review-plan.mjs';
 
@@ -30,6 +31,7 @@ export async function renderSheets(batch,out,browser){
 function parseOutput(stdout){
  let text=stdout.trim();
  try{const wrapper=JSON.parse(text);if(typeof wrapper.result==='string')text=wrapper.result;}catch{}
+ if(text.includes('\nFRAME ')||text.startsWith('FRAME '))text=text.split('\n').filter(l=>l.trim().startsWith('{"frames"')).at(-1)||text;
  return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g,''));
 }
 
@@ -50,12 +52,21 @@ async function reviewInputs(batch,out,key,browser){
 function digest(value){return createHash('sha256').update(value).digest('hex');}
 function evidence(paths){return paths.map(path=>[path,existsSync(path)?digest(readFileSync(path)):'missing']);}
 function receipt(stdout,frames){
- // Preserve exact public artifact paths while redacting account data in model prose.
- let result=stdout;const markers=frames.map((f,i)=>['FRAMEIDENTITY'+i+'END',f.path]);
- for(const [marker,path]of markers)result=result.replaceAll(path,marker);
- result=redact(result);
- for(const [marker,path]of markers)result=result.replaceAll(marker,path);
- return result;
+ const markers=frames.map((f,i)=>['FRAMEIDENTITY'+i+'END',f.path]);
+ const clean=value=>{
+  if(typeof value==='string'){
+   let text=value;for(const [marker,path]of markers)text=text.replaceAll(path,marker);
+   text=redact(text);for(const [marker,path]of markers)text=text.replaceAll(marker,path);return text;
+  }
+  return value;
+ };
+ let data;try{data=JSON.parse(stdout);}catch{data={unparsed:stdout};}
+ if(typeof data.result==='string'){
+  const result=data.result;delete data.result;const envelope=redactStructured(data,clean);
+  try{envelope.result=JSON.stringify(redactStructured(JSON.parse(result),clean));}catch{envelope.result=clean(result);}
+  return JSON.stringify(envelope,null,2);
+ }
+ return JSON.stringify(redactStructured(data,clean),null,2);
 }
 
 export async function runReview(report,config,out,cwd,browser,{invoke=command}={}){
@@ -67,7 +78,7 @@ export async function runReview(report,config,out,cwd,browser,{invoke=command}={
  if(config.review?.resume&&existsSync(priorPath))previous=JSON.parse(readFileSync(priorPath,'utf8'));
  const owner=join(process.env.HOME,'.claude','AGENTS.md');
  const identity=digest(JSON.stringify({tool:digest(readFileSync(new URL('./review.mjs',import.meta.url))),plan:digest(readFileSync(new URL('./review-plan.mjs',import.meta.url))),owner:evidence([owner]),head:report.head,build:typeof report.build==='object'?{kind:report.build.kind,id:report.build.id}:report.build,servedBuild:report.servedBuild?.id,
-  rules:evidence(config.designRules||[]),references:evidence(config.references||[]),chrome:config.prototypeChrome||[],version:3}));
+  rules:evidence(config.designRules||[]),references:evidence(config.references||[]),chrome:config.prototypeChrome||[],audit:digest(readFileSync(new URL('./review-audit.mjs',import.meta.url))),version:4}));
  let halted=false;
  report.gaps=report.gaps.filter(g=>!g.startsWith('critic batch incomplete')&&!g.startsWith('some frames lack')&&!g.startsWith('Opus quota unavailable')&&!g.startsWith('critic calibration missed')&&!g.startsWith('review budget exhausted'));
  const credentialRule=existsSync(owner)?readFileSync(owner,'utf8').split('\n').find(l=>l.startsWith('- When an agent looks for a credential'))||'':'';
@@ -100,15 +111,16 @@ Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(',
   const {frames,control}=await reviewInputs(batch,out,key,browser);
   const sheets=mode==='sheets'?await renderSheets({...batch,sheets:Array.from({length:Math.ceil(frames.length/(config.review?.framesPerSheet||8))},(_,i)=>frames.slice(i*(config.review?.framesPerSheet||8),(i+1)*(config.review?.framesPerSheet||8)))},out,browser):[];
   report.sheets||=[];report.sheets.push(...sheets);
-  const promptPath=join(out,key+'.prompt.md'),manifest=frames.map(f=>({path:f.path,screen:f.screen,state:f.state,size:f.size,isEntry:f.isEntry}));
+  const promptPath=join(out,key+'.prompt.md'),manifest=frames.map(f=>({path:f.path,screen:f.screen,state:f.state,size:f.size,isEntry:f.isEntry,readPath:mode==='sheets'?sheets[Math.floor(frames.indexOf(f)/(config.review?.framesPerSheet||8))]:f.path}));
   const instruction=mode==='sheets'?`Read ONLY these contact sheets first: ${sheets.join(', ')}. Each caption maps to a frame below. Judge every frame. Use inspect when text/details are too small or any defect is suspected; flagged screens receive full-size follow-up.`:`Read EVERY full-size frame below. Resolve the flagged observations. Give a definite pass or fail for each; do not return inspect.`;
-  writeFileSync(promptPath,`${policy}\n${instruction}\nOutput only JSON {"frames":[{"path":"exact manifest path","status":"pass|fail|inspect","rules":["specific rule id, e.g. overlapping-controls"],"failures":["specific observation"]}]}. Exactly one entry per manifest path, no omitted or extra frames.\n${JSON.stringify(manifest)}`);
+  writeFileSync(promptPath,`${policy}\n${instruction}\nRead exactly one review image at a time using each manifest entry’s readPath. Immediately after its Read result, emit one line FRAME {"path":"exact manifest path","status":"pass|fail|inspect","rules":[],"failures":[]} for each frame in that image, before opening the next review image. Bind each judgment to the image you just saw, using its exact path; never infer identity from position or another image. For sheets, bind every captioned frame before the next sheet. Your final response must be one compact JSON line containing the identical bound judgments: {"frames":[{"path":"exact manifest path","status":"pass|fail|inspect","rules":["specific rule id, e.g. overlapping-controls"],"failures":["specific observation"]}]}. Exactly one entry per manifest path, no omitted or extra frames.\n${JSON.stringify(manifest)}`);
   const entry={id:key,signature,mode,screens:batch.screens,frames:batch.frames.map(f=>f.path),sheets,attempts:[],status:'incomplete',canary:{status:'unrun',expectedRule:'overlapping-controls'}};recordBatch(entry);checkpoint();
   for(let attempt=0;attempt<(config.review?.attempts||2);attempt++){
    if(Date.now()>=deadline)break;
-   const started=Date.now();
-   const result=await invoke('claude',['-p','--model','opus','--permission-mode','dontAsk','--tools','Read','--allowedTools','Read','--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--no-session-persistence','--output-format','json','--',`Read ${promptPath} and return the required JSON after reviewing its images.`],{cwd,timeout:Math.min(config.criticTimeoutMs||600000,600000,deadline-Date.now()),env:{...process.env,CLAUDE_CONFIG_DIR:join(process.env.HOME,'.claude-b')}});
+   const started=Date.now(),audit=reviewAudit(manifest);
+   const result=await invoke('claude',['-p','--model','opus','--permission-mode','dontAsk','--tools','Read','--allowedTools','Read','--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--no-session-persistence','--verbose','--output-format','stream-json','--',`Read ${promptPath} and return the required JSON after reviewing its images.`],{cwd,onEvent:audit.event,timeout:Math.min(config.criticTimeoutMs||600000,600000,deadline-Date.now()),env:{...process.env,CLAUDE_CONFIG_DIR:join(process.env.HOME,'.claude-b')}});
    writeFileSync(join(out,`${key}-attempt${attempt+1}.txt`),receipt(result.stdout,frames));
+   writeFileSync(join(out,`${key}-attempt${attempt+1}.bindings.json`),receipt(JSON.stringify(audit.snapshot()),frames));
    writeFileSync(join(out,`${key}-attempt${attempt+1}.stderr.txt`),redact(result.stderr||''));
    const record={attempt:attempt+1,exit:result.code,elapsedMs:Date.now()-started};entry.attempts.push(record);
    let envelope;try{envelope=JSON.parse(result.stdout);}catch{}
@@ -122,7 +134,7 @@ Read ${owner} section 0 and these repo rules: ${(config.designRules||[]).join(',
     if(!['fail','inspect'].includes(check.status)||!check.rules?.includes(entry.canary.expectedRule)){
      halted=true;entry.canary.status='missed';record.reason='generated overlapping controls were not detected';report.gaps.push('critic calibration missed; no visual verdict');checkpoint();return null;
     }
-    entry.canary.status='caught';
+    entry.canary.status='caught';entry.binding=audit.validate(all.frames);
     const judgment=applyBatch(batch,{frames:all.frames.filter(f=>f.path!==control).map(f=>({...f,path:frames.find(x=>x.path===f.path).source}))});
     if(mode!=='sheets'&&judgment.frames.some(f=>f.status==='inspect'))throw Error('full-size review did not resolve verdict');
     entry.status=judgment.status;entry.judgments=judgment.frames;checkpoint();return judgment;

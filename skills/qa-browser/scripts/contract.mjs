@@ -66,3 +66,10 @@ export function redact(value) {
  .replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/gi,'[email]')
  .replace(/\b[A-Za-z0-9_+\/-]{28,}={0,2}\b/g,'[redacted]');
 }
+
+export function redactStructured(value,clean=redact){
+ if(typeof value==='string')return clean(value);
+ if(Array.isArray(value))return value.map(item=>redactStructured(item,clean));
+ if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,/password|passwd|otp|token|secret|session|auth|^(?:pwd|pin|api[_-]?key|sid|csrf)$/i.test(key)&&!/^unauthorized$/i.test(key)?'[redacted]':redactStructured(item,clean)]));
+ return value;
+}
