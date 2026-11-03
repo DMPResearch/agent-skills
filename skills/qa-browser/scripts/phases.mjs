@@ -1,3 +1,4 @@
+import {recordDepartures} from './return-path.mjs';
 import {createHash} from 'node:crypto';
 import {join} from 'node:path';
 import {finding} from './findings.mjs';
@@ -93,7 +94,7 @@ export function terminalQueue(){
      if(!await observer.settle())throw Error('in-flight entry requests unresolved before terminal action');
      await root.locator(recipe.selector||recipe.target).waitFor({state:'attached'});
      entered=true;errors.phase('terminal-action');
-     const effects=await steps(page,recipe.steps,root,kind==='break'?recipe.target:undefined,navigation.run,terminalPace);
+     const effects=await steps(page,recipe.steps,root,kind==='break'?recipe.target:undefined,navigation.run,terminalPace);for(const cell of cells)recordDepartures(cell,recipe.steps,effects);
      if(effects.some(e=>e.type==='handoff')){record.handoff=effects.find(e=>e.type==='handoff');record.status=runtime.failures.length?'fail':'pass';}
      else{
      const settled=await observer.settle();

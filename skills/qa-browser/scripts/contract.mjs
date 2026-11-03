@@ -1,3 +1,4 @@
+import {validateReturnPaths} from './return-path.mjs';
 import {validateCounterparts} from './counterparts.mjs';
 import {validateObservations} from './observations.mjs';
 export const breakKinds=['empty','invalid','double-submit','refresh','back-forward','signed-out','signed-in'];
@@ -35,6 +36,7 @@ export function validate(c) {
   }
  }
  validateCounterparts(c);
+ validateReturnPaths(c);
  return c;
 }
 export function selectScope(flows,graph,globals=[]) {

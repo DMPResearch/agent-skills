@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {resolveReturnPaths} from './return-path.mjs';
 import {readFileSync,mkdirSync,existsSync,writeFileSync,statSync} from 'node:fs';
 import {resolve,dirname,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -137,6 +138,7 @@ try{
  }
  if(!config.standingCrawl?.useResults){report.servedBuild=await buildObserver.finish();if(report.servedBuild.assets.length&&!report.build)report.build=report.servedBuild;if(report.servedBuild.unreadable.length)report.gaps.push('served build bytes unverified: '+report.servedBuild.unreadable.map(redact).join(', '));}
  }
+ resolveReturnPaths(report,config);
  clearTimeout(timer);
  if(!captureOnly){
  const b=await browserModule.chromium.launch();

@@ -510,6 +510,25 @@ existing action bound, and neither captures, inspects nor traverses that foreign
 page. The next edge uses a fresh app page. Terminal handoffs use the same action.
 Same-origin navigation retains its normal assertions and traversal.
 
+A handoff proves departure only. Every declared handoff adds the visible cell
+gap `return path not proven: <control>`; the departure receipt alone cannot make
+coverage complete. To name a return proof, add
+`returnPath:{flow:"callback",state:"signed-in"}` to the handoff step. The target
+must be another flow on the app origin, with that declared state and a final
+entry assertion (`visible`, `hidden`, `text`, `url`, `count` or `value`). The
+runner must actually capture and inspect its declared callback route, after
+executing its entry/state steps, in the same engine, theme and viewport. A
+signed-in proof also needs verified real session identity. An adapter may drive
+that native callback entry through a real provider flow using its existing
+entry hooks. The route comparison uses origin and pathname; assertions own the
+expected callback result and query-dependent state.
+
+`cell.returnPaths` retains departure, proof cell, route and status. Missing,
+unrun, incomplete or imported-only proof leaves the gap; declarations never
+clear it. An executed callback with a functional failure fails the source
+screen as well. Successful matching callback coverage clears only its return
+gap, leaving every other coverage and visual-review requirement intact.
+
 Cells retain `findings` with message, kind, phase, document identity, URL,
 origin, scope and `affectsVerdict`; captured paths also have `frameDocuments`.
 Known third-party document findings remain visible in `foreignFindings` and

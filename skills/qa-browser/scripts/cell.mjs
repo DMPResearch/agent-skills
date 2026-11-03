@@ -1,3 +1,4 @@
+import {declareReturnPaths,recordDepartures,recordReturnEntry} from './return-path.mjs';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -11,7 +12,7 @@ import {inspectFindings,inventory,steps,withPrototypeChrome,NoEffectIncompleteEr
 export async function runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver,sessions,terminals,pace,identities=new Map()}){
  const {flow,engine,theme,size,state}=t;
  const id=`${flow.id}-${state.id}-${engine}-${theme}-${size}`.replace(/[^a-z0-9.-]/gi,'_');
- const cell={id,screen:flow.id,state:state.id,engine,theme,size,complete:false,frames:[],failures:[],gaps:[],controls:[],repro:[`Open ${redact(new URL(flow.url,config.baseURL))}`,`Use ${engine}, ${size}, ${theme}, state ${state.id}`]};report.cells.push(cell);
+ const cell={id,screen:flow.id,state:state.id,engine,theme,size,complete:false,frames:[],failures:[],gaps:[],controls:[],repro:[`Open ${redact(new URL(flow.url,config.baseURL))}`,`Use ${engine}, ${size}, ${theme}, state ${state.id}`]};report.cells.push(cell);declareReturnPaths(cell,flow,state);
  let context,cellTimer,navigation,runtime,errors;const observed=[];
  try{
   if(report.blockedAuthStates?.includes(state.id)||state.id==='signed-in'&&report.blockedAuthEngines?.includes(engine)){cell.gaps.push('authentication unavailable; cell not attempted');return;}
@@ -41,7 +42,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   let page,surface;
   const open=async()=>{page=await context.newPage();surface=flow.frame?page.frameLocator(flow.frame):page;runtime=observeRuntime(page,cell,{...config,observations:flow.observations},observed);navigation=trackNavigations(page);};
   await open();
-  const act=(items,target)=>steps(page,items,surface,target,navigation.run,pace);
+  const act=async(items,target)=>{const effects=await steps(page,items,surface,target,navigation.run,pace);recordDepartures(cell,items,effects);return effects;};
   let entryBinding;
   const reset=async()=>{
    errors.phase('entry');
@@ -67,7 +68,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
     await frame.evaluate(()=>scrollTo(0,0));
    }
   });
-  await reset();await snap('entry');cell.entryFrame=cell.frames[0];
+  await reset();recordReturnEntry(cell,page,flow,state,config);await snap('entry');cell.entryFrame=cell.frames[0];
   // Replay from the entry for each edge. Contracts own safe actions and their expectations.
   const queue=[[]],seen=new Set(),breakPlans=[],planned=new Set();let states=0;const reachedForms=new Set(),reachedInputs=new Set(),reachedControls=new Set();
   while(queue.length){

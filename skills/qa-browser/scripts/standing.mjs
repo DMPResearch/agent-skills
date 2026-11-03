@@ -1,3 +1,4 @@
+import {declareReturnPaths} from './return-path.mjs';
 import {importCrawl} from './external.mjs';
 import {observeRuntime,verifyIdentity} from './runtime.mjs';
 import {observeErrors} from './errors.mjs';
@@ -39,6 +40,7 @@ export async function captureStanding(tasks,env){
    const terminalControls=flow.controls.filter(c=>c.terminal),terminalBreaks=flow.breaks.filter(b=>b.terminal&&(!b.state||b.state===state.id));
    const imported=importCrawl(data,{expected:group.map(t=>({...t,screen:flow.id,state:state.id})),deferred:{controls:terminalControls,breaks:terminalBreaks}});
    for(const cell of imported.cells){
+    declareReturnPaths(cell,flow,state);
     for(const path of cell.frames){if(claimedPaths.has(path))throw Error('duplicate standing frame path: '+path);claimedPaths.add(path);}
     cell.gaps=cell.gaps.filter(g=>g!=='terminal evidence deferred; standing terminal phase required');cell.complete=cell.gaps.length===0;
     cell.findings=runtime.findings||[];cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps,...imported.gaps);cell.diagnostics=runtime.diagnostics;cell.observations=runtime.observations;cell.complete&&=runtime.gaps.length===0;
