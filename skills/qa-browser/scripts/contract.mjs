@@ -13,6 +13,8 @@ export function validate(c) {
  if(!Array.isArray(c.flows)||!c.flows.length)throw Error('flows contract is required');
  if(!c.baseURL&&!c.start)throw Error('baseURL or start contract required');
  if(c.prototypeChrome?.some(x=>!x.selector||!x.reason))throw Error('prototype chrome needs a selector and reason');
+ if((c.servicePhase||c.flows.some(f=>[...f.controls||[],...f.breaks||[]].some(r=>r.service)))&&(!c.servicePhase||!fullSizes.includes(c.servicePhase.size)||!['light','dark'].includes(c.servicePhase.theme)||!Number.isInteger(c.serviceIntervals?.[c.servicePhase.limiter])||c.serviceIntervals?.[c.servicePhase.limiter]<1||!Number.isInteger(c.serviceIntervals?.[c.servicePhase.cellLimiter])||c.serviceIntervals?.[c.servicePhase.cellLimiter]<1))throw Error('servicePhase requires a declared matrix size, theme and positive serviceIntervals for both limiter and cellLimiter');
+ if(c.standingCrawl?.useResults&&c.flows.some(f=>[...f.controls,...f.breaks].some(r=>r.service)))throw Error('external capture cannot prove service action suppression; use native service capture');
  const ids=new Set();
  for(const f of c.flows){
   if(!f.id||ids.has(f.id)||!f.url||!f.entry||!Array.isArray(f.states)||!f.states.length||!Array.isArray(f.steps)||!Array.isArray(f.controls)||!Array.isArray(f.breaks))throw Error('invalid or duplicate flow contract');
@@ -22,6 +24,12 @@ export function validate(c) {
   if(typeof f.main!=='boolean')throw Error('flow main-screen ownership required');
   if(f.states.some(s=>typeof s!=='string'&&(!s.id||!Array.isArray(s.setup))))throw Error('invalid auth/data state');
   for(const item of [...f.controls,...f.breaks])if(item.terminal!==undefined&&typeof item.terminal!=='boolean')throw Error('terminal must be boolean; it declares once-per-route/engine coverage');
+  for(const recipe of [...f.controls,...f.breaks])if(recipe.service!==undefined&&(typeof recipe.service!=='boolean'||recipe.service&&(!recipe.name||!recipe.role)))throw Error('service must be boolean and needs the expected control name and role');
+  for(const recipe of [...f.controls,...f.breaks].filter(r=>r.service)){
+   const request=recipe.serviceRequest;let origin;try{origin=new URL(request?.origin);}catch{}
+   if(!origin||!['http:','https:'].includes(origin.protocol)||origin.origin!==request.origin||origin.origin===new URL(c.baseURL||c.start.url).origin||!['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(request.method))throw Error('flow '+f.id+' serviceRequest requires an exact third-party HTTP(S) origin and uppercase method');
+   if(recipe.postState){const target=c.flows.find(x=>x.id===recipe.postState.flow);if(!target||!target.states.some(s=>(typeof s==='string'?s:s.id)===recipe.postState.state)||new URL(target.url,c.baseURL||c.start.url).origin!==new URL(c.baseURL||c.start.url).origin)throw Error('flow '+f.id+' postState requires an own-origin flow and declared state');}
+  }
   for(const b of f.breaks)if(b.coverageTarget!==undefined&&(typeof b.coverageTarget!=='string'||!b.coverageTarget||!b.target))throw Error('break coverageTarget needs an observed input name and CSS target');
   for(const control of f.controls)if(!control.selector||!Array.isArray(control.steps)||!['visible','hidden','text','url','count','value','file-chooser','empty-guard','no-effect','handoff'].includes(control.steps.at(-1)?.action))throw Error('control requires selector and expected effect steps');
   for(const control of f.controls)for(const [index,step]of control.steps.entries())if(step.action==='no-effect'&&(index!==control.steps.length-1||step.selector!==control.selector||step.role||step.label))throw Error('no-effect must be the final control step and use its exact CSS selector');
@@ -35,6 +43,8 @@ export function validate(c) {
    if(['fill','select','press','text','url','value','count'].includes(step.action)&&step.value===undefined&&!step.env)throw Error('step value required');
   }
  }
+ const visit=(id,path=[])=>{if(path.includes(id))throw Error('postState service entries must not form a cycle');const f=c.flows.find(f=>f.id===id);for(const r of [...f.controls,...f.breaks].filter(r=>r.service&&r.postState))visit(r.postState.flow,[...path,id]);};
+ for(const f of c.flows)visit(f.id);
  validateCounterparts(c);
  validateReturnPaths(c);
  return c;

@@ -38,3 +38,13 @@ test('non-Bearer authorization is scrubbed while an Unauthorized error keeps its
  for(const scheme of ['Token','Custom'])assert.ok(!redact('Authorization: '+scheme+' '+value).includes(value));
  assert.equal(redact('Unauthorized: access denied'),'Unauthorized: access denied');
 });
+
+test('readable report names replay and resized provenance separately from the real phase',()=>{
+ const out=mkdtempSync(join(tmpdir(),'qa-report-source-'));
+ try{
+  const sources=['service response replayed from real call in phase phase-1','resized from a live page'];
+  const report={cells:sources.map((captureSource,i)=>({id:'cell-'+i,screen:'entry',engine:'chromium',theme:'light',size:'390x660',state:'code',servicePhase:'phase-1',captureSource,complete:false,frames:[],controls:[],failures:[],gaps:['visual review not run'],repro:['Real service phase phase-1']})),gaps:[]};
+  assert.equal(save(report,out),2);
+  const md=readFileSync(join(out,'report.md'),'utf8');for(const source of sources)assert.ok(md.includes('Capture source: '+source),md);
+ }finally{rmSync(out,{recursive:true,force:true});}
+});

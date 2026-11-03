@@ -26,7 +26,8 @@ export function reviewPlan(cells,options){
  reviewBatches(cells,options);
  const groups=Object.groupBy(cells,frameGroup),mandatory=[],sheets=[],gaps=[],missingGroups=[];
  for(const [key,items]of Object.entries(groups)){
-  const dimensions=items.map(c=>({cell:c,width:Number(c.size.split('x')[0]),height:Number(c.size.split('x')[1])}));
+  for(const cell of items)if(!cell.frames.length)gaps.push('state size capture missing: '+key+' '+cell.size);
+  const dimensions=items.filter(c=>c.frames.length).map(c=>({cell:c,width:Number(c.size.split('x')[0]),height:Number(c.size.split('x')[1])}));
   const phone=dimensions.filter(x=>x.width<=600).sort((a,b)=>a.height-b.height||a.width-b.width)[0];
   const desktop=dimensions.filter(x=>x.width>=1024).sort((a,b)=>b.width-a.width||a.height-b.height)[0];
   if(!phone)gaps.push('mandatory shortest-phone capture missing: '+key);

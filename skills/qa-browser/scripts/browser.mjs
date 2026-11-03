@@ -21,7 +21,7 @@ export async function steps(page,items,root=page,target,runNavigation=operation=
      await Promise.all([wait,s.gesture==='double-click'?loc.dblclick({noWaitAfter:true}):loc.click({noWaitAfter:true})]);
      const reached=new URL(page.url());effects.push({type:'handoff',host:reached.host,origin:reached.origin});
      if(reached.origin!==s.origin)throw Error('handoff reached unexpected origin: '+reached.origin);
-    }finally{wait.catch(()=>{});if(new URL(page.url()).origin!==own){const closed=page.waitForEvent('close');const closing=page.close({runBeforeUnload:page.context().browser()?.browserType().name()==='chromium'});await Promise.race([closed,closing.then(()=>closed)]);}}
+    }finally{wait.catch(()=>{});if(new URL(page.url()).origin!==own){await closeBoundaryPage(page);}}
     return effects;
    }
    case 'file-chooser':{const event=page.waitForEvent('filechooser');try{await loc.click();await event;effects.push({type:'file-chooser',observed:true});}catch(error){event.catch(()=>{});throw error;}break;}
@@ -177,4 +177,10 @@ export async function withPrototypeChrome(page,chrome,operation){
   if(content)for(const frame of page.frames())styles.push(await frame.addStyleTag({content}));
   return await operation();
  }finally{for(const style of styles)await style.evaluate(e=>e.remove());}
+}
+
+export async function closeBoundaryPage(page){
+ if(page.isClosed())return;
+ const closed=page.waitForEvent('close'),closing=page.close({runBeforeUnload:page.context().browser()?.browserType().name()==='chromium'});closed.catch(()=>{});closing.catch(()=>{});
+ await Promise.race([closed,closing.then(()=>closed)]);
 }

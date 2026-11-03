@@ -19,3 +19,11 @@ export function observeBuild(baseURL){
   }
  };
 }
+
+export function compareServedBuild(actual,expected,manifest={}){
+ const failures=[],gaps=[];
+ if(!expected?.assets?.length||!actual?.assets?.length||actual.unreadable?.length||expected.unreadable?.length)return {failures,gaps:['service build bytes unverified']};
+ const baseline=new Map();for(const asset of expected.assets){const hashes=baseline.get(asset.path)||new Set();hashes.add(asset.sha256);baseline.set(asset.path,hashes);}
+ for(const asset of actual.assets){const hashes=baseline.get(asset.path);if(hashes&&(hashes.size!==1||!hashes.has(asset.sha256)))failures.push('service build mismatch: '+asset.path);else if(!hashes&&manifest[asset.path]!==asset.sha256)gaps.push('service build asset unverified: '+asset.path);}
+ return {failures,gaps};
+}

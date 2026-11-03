@@ -22,7 +22,8 @@ mkdirSync(out,{recursive:true});
 const report={version:1,status:'incomplete',started:new Date().toISOString(),cells:[],gaps:[],scope:[],sheets:[],unrun:['Independent Codex code critique belongs to orchestrator cross-review; screenshot lane is Opus-only','native Safari and Android Chrome are separate verify-live lanes']};
 if(captureOnly){report.captureOnly=true;report.gaps.push('visual review not run');}
 let buildObserver,config,browserModule,adapter,buildAdapter,startedServer,deadline,timer,stopping=false;
-const stop=()=>{stopping=true;report.gaps.push('QA run cancelled; remainder unrun');for(const b of browsers.values())b.close().catch(()=>{});};
+const admissionAbort=new AbortController();
+const stop=()=>{stopping=true;admissionAbort.abort();report.gaps.push('QA run cancelled; remainder unrun');for(const b of browsers.values())b.close().catch(()=>{});};
 process.once('SIGTERM',stop);process.once('SIGINT',stop);
 const browsers=new Map(), launches=new Map();
 const json=path=>JSON.parse(readFileSync(resolve(root,path),'utf8'));
@@ -38,7 +39,7 @@ try{
  try{report.head=git('rev-parse','HEAD');const dirty=git('status','--porcelain');if(dirty)report.gaps.push('working tree differs from recorded head');}
  catch{report.head={kind:'unversioned',root:report.sourceRoot,observedAt:new Date().toISOString()};report.gaps.push('git head unavailable: source directory is unversioned');if(args.includes('--pr-base'))throw Error('PR mode requires a git checkout');}
  deadline=Date.now()+Math.min(config.timeoutMs||1800000,1800000);
- timer=setTimeout(()=>{report.gaps.push('30-minute run cap reached');for(const b of browsers.values())b.close().catch(()=>{});},deadline-Date.now());
+ timer=setTimeout(()=>{admissionAbort.abort();report.gaps.push('30-minute run cap reached');for(const b of browsers.values())b.close().catch(()=>{});},deadline-Date.now());
  if(config.adapter){buildAdapter=await import(pathToFileURL(resolve(root,config.adapter)));if(!resumeReview)adapter=buildAdapter;}
  let graph;
  if(args.includes('--pr-base')){
@@ -98,7 +99,7 @@ try{
    previous.sourceRoot!==report.sourceRoot||buildKey(previous.build)!==buildKey(report.build)||
    [...previous.gaps,...report.gaps].includes('working tree differs from recorded head'))throw Error('review resume requires matching clean source, config and served build identities; run a fresh capture');
   if(!previous.cells?.length)throw Error('review resume has no prior captured cells');
-  for(const field of ['cells','expectedCells','scope','servedBuild','sharedEntry','terminalChecks','standingEntry','runFailures','captureProvenance','runtimeDiagnostics','unrun'])if(previous[field]!==undefined)report[field]=previous[field];
+  for(const field of ['cells','expectedCells','scope','servedBuild','sharedEntry','serviceTraffic','terminalChecks','serviceChecks','standingEntry','runFailures','captureProvenance','runtimeDiagnostics','unrun'])if(previous[field]!==undefined)report[field]=previous[field];
   report.gaps.push(...previous.gaps);config.review={...config.review,resume:true,splitTimedOut:args.includes('--split-timed-out')};report.resumedFrom=previous.finished;
  }else{
  if(config.standingCrawl){
@@ -121,20 +122,25 @@ try{
  }else{
  if(adapter?.setup)await adapter.setup({config,root});
  const tasks=scope.flatMap(s=>matrix(s.tier).flatMap(cell=>(s.tier==='global'?s.flow.states.slice(0,1):s.flow.states).map(state=>({...s,...cell,state:typeof state==='string'?{id:state}:state}))));
- report.expectedCells=tasks.length;
- const pace=servicePacer(config.serviceIntervals),terminals=terminalQueue();
- const env={config,report,out,browserModule,browsers,launches,adapter,buildObserver,pace,terminals,identities:new Map(),remaining:()=>deadline-Date.now(),stopping:()=>stopping};
+ const phaseOwned=new Set(config.flows.flatMap(f=>[...f.controls,...f.breaks].filter(r=>r.service&&r.postState).map(r=>r.postState.flow)));
+ report.expectedCells=tasks.filter(t=>!phaseOwned.has(t.flow.id)).length;
+ const pace=servicePacer(config.serviceIntervals),terminals=terminalQueue(),services=terminalQueue({service:true});
+ const env={config,report,out,browserModule,browsers,launches,adapter,buildObserver,pace,terminals,services,tasks,signal:admissionAbort.signal,onServiceLimit:detail=>{if(!report.serviceLimit){report.serviceLimit=detail;report.gaps.push('live service stopped after HTTP '+detail.status+' at '+detail.origin+'; '+report.serviceTraffic.total+' third-party requests observed');stop();}},identities:new Map(),remaining:()=>deadline-Date.now(),stopping:()=>stopping};
  const sessions=await prepareEngines(tasks,env);env.sessions=sessions;
- const nativeTasks=tasks.filter(t=>t.flow.capture!=='standing');
+ const nativeTasks=tasks.filter(t=>t.flow.capture!=='standing'&&!phaseOwned.has(t.flow.id));
  let next=0;
- await Promise.all([0,1].map(async()=>{
+ await Promise.all((config.servicePhase?[0]:[0,1]).map(async()=>{
   while(next<nativeTasks.length&&!stopping&&Date.now()<deadline){const t=nativeTasks[next++];await runCell(t,env);}
  }));
- if(!stopping&&Date.now()<deadline)await captureStanding(tasks.filter(t=>t.flow.capture==='standing'),env);
+ if(!stopping&&Date.now()<deadline)await captureStanding(tasks.filter(t=>t.flow.capture==='standing'&&!phaseOwned.has(t.flow.id)),env);
+ if(!stopping&&Date.now()<deadline)await services.run(env);
+ for(const t of tasks.filter(t=>phaseOwned.has(t.flow.id)))if(!report.cells.some(c=>c.serviceState&&c.screen===t.flow.id&&(c.authState||c.state)===t.state.id&&c.engine===t.engine&&c.theme===t.theme&&c.size===t.size)){
+  report.cells.push({id:'service-unrun-'+[t.flow.id,t.state.id,t.engine,t.theme,t.size].join('-'),screen:t.flow.id,state:t.state.id,authState:t.state.id,engine:t.engine,theme:t.theme,size:t.size,serviceState:true,complete:false,frames:[],controls:[],failures:[],gaps:['service state size capture missing: entry phase unrun']});report.expectedCells++;
+ }
  if(!stopping&&Date.now()<deadline)await terminals.run(env);
  resolveCounterparts(report,config);
- for(const {flow}of scope)for(const [index,b]of flow.breaks.entries())if(b.state&&!b.notApplicable&&!report.cells.some(c=>c.screen===flow.id&&c.state===b.state&&c.controls.some(x=>x.index===index&&['pass','fail','shared'].includes(x.status))))report.gaps.push('declared break scope unrun: '+flow.id+' break '+index+' state '+b.state);
- if(report.cells.length!==tasks.length)report.gaps.push(`unrun cells: ${tasks.length-report.cells.length}`);
+ for(const {flow}of scope)for(const [index,b]of flow.breaks.entries())if(b.state&&!b.notApplicable&&!report.cells.some(c=>c.screen===flow.id&&(c.authState||c.state)===b.state&&c.controls.some(x=>x.index===index&&['pass','fail','shared'].includes(x.status))))report.gaps.push('declared break scope unrun: '+flow.id+' break '+index+' state '+b.state);
+ if(report.cells.length!==report.expectedCells)report.gaps.push(`unrun cells: ${report.expectedCells-report.cells.length}`);
  }
  if(!config.standingCrawl?.useResults){report.servedBuild=await buildObserver.finish();if(report.servedBuild.assets.length&&!report.build)report.build=report.servedBuild;if(report.servedBuild.unreadable.length)report.gaps.push('served build bytes unverified: '+report.servedBuild.unreadable.map(redact).join(', '));}
  }

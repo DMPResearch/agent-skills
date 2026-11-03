@@ -27,7 +27,7 @@ export function save(report,out){
  const build=typeof report.build==='object'?`${report.build.kind} ${report.build.id}`:report.build;
  const lines=['# Browser QA',`Status: ${report.status}`,`Head: ${head||'unrecorded'}; build: ${build||'unverified'}`,...report.gaps.map(g=>'Incomplete: '+redact(g)),...(report.runFailures||[]).map(f=>'Failure: '+redact(f))];
  for(const s of report.screens){lines.push(`\n## ${s.screen}: ${s.status}`,`Functional: ${s.functional}; no-slop: ${s.slop}`);for(const c of byScreen[s.screen]){
-  lines.push(`\n${c.id}: ${verdict([c],[])}; critic ${c.critic||'unrun'}`,...c.repro.map((s,i)=>`${i+1}. ${redact(s)}`),...c.failures.map(f=>'- '+redact(f)),...(c.visualFailures||[]).map(f=>'- Visual: '+f),...c.frames.map(f=>'Frame: '+f),...c.gaps.map(g=>'Incomplete: '+redact(g)),...(c.observations||[]).map(o=>'Observation '+o.classId+' ('+o.outcome+'): '+redact(o.url)+'; '+redact(o.reason)));
+  lines.push(`\n${c.id}: ${verdict([c],[])}; critic ${c.critic||'unrun'}`,...(c.captureSource?['Capture source: '+redact(c.captureSource)]:[]),...c.repro.map((s,i)=>`${i+1}. ${redact(s)}`),...c.failures.map(f=>'- '+redact(f)),...(c.visualFailures||[]).map(f=>'- Visual: '+f),...c.frames.map(f=>'Frame: '+f),...c.gaps.map(g=>'Incomplete: '+redact(g)),...(c.observations||[]).map(o=>'Observation '+o.classId+' ('+o.outcome+'): '+redact(o.url)+'; '+redact(o.reason)));
  }}
  for(const f of report.foreignFindings)lines.push('Third-party observation (does not fail app): '+f.origin+' '+f.document.url+'; '+f.message);
  writeFileSync(join(out,'report.md'),lines.join('\n')+'\n');

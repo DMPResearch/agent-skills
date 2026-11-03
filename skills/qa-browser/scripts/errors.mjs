@@ -22,6 +22,7 @@ export async function observeErrors(context,cell,failures=cell.failures,config={
  };
  const record=async(error,where,page,frame,during,at)=>{
   const detail=append(error,where,'pageerror',during);
+  if(config.intentBoundaries?.get(page)?.at<=at){cell.observations.push({kind:'post-intent-unjudged',message:detail.message,document:detail.document});return;}
   const matched=await probe.match(page,error,config,{frame,at});
   if(matched){const {request,rule,failedAt,errorAt}=matched;cell.observations.push({kind:'external-request',classId:rule.id,owner:rule.owner,reason:redact(rule.reason),outcome:'page-error',url:redact(request.url()),method:request.method(),resourceType:request.resourceType(),document:detail.document,message:detail.message,correlation:{failedAt,errorAt,windowMs:probeErrorWindowMs}});}
   else finding(cell,'uncaught page error: '+detail.message,{...config,document:detail.document,phase:detail.phase,kind:'pageerror',target:failures});

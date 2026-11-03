@@ -11,11 +11,14 @@ section 0. Read `~/.claude/lessons/ui-verification.md` when available. Use
 asset, native-device and visual evidence obligations. This skill reuses its
 image/viewport checks; WebKit results never claim native Safari coverage.
 
-Run against the served real app and real services. No mock responses, invented
+Run against the served real app and real services. No invented responses or
 flows, product fixes, commits, merges, deployments or production writes. Test
 writes require isolated real sandbox data and declared reset/cleanup. Never
 activate an undeclared destructive control. Never restart or signal an existing
 server. A configured start command owns only the process it starts.
+Explicit service phases may replay only this run's genuine responses in memory
+for fresh matrix entry, as specified below. Replayed entry is labeled and
+never counts as another live service call; no response tape is saved.
 
 1. Read [the repo contract](references/contract.md). Load `qa-browser.json`
    from the target repo. Missing flows, accounts, design references or build
@@ -95,7 +98,9 @@ otherwise run again. The target lane owns superseded-head cancellation and
 Depot's all-workload budget admission. Missing lane authentication or budget
 admission stays incomplete. See [the specification](../../docs/qa-agent.md).
 
-Tool self-tests: `node --test <skill>/scripts/*.test.mjs`. The browser regression
+Tool self-tests: `node <skill>/scripts/run-tests.mjs`. This supported runner
+enforces serial test files; direct wildcard `node --test` launches concurrent
+browsers and is not the suite entry point. See [test scheduling](references/testing.md). The browser regression
 suite additionally needs `QA_PW_PATH=/absolute/path/to/package.json` pointing to
 an existing Playwright install with Chromium and WebKit. Fixtures live only in
 the tests. No real service is substituted in product QA.
@@ -125,3 +130,14 @@ unknown provenance never grants an exemption. Probe page-error receipts require
 passive same-page failed-request correlation within the contract's 1,000 ms
 window. No fetch instrumentation is installed. Split auth flows may declare
 `authCounterparts`; only executed matching-matrix auth proof satisfies them.
+
+Live third-party controls/breaks use `service:true` with declared accessible name
+and role and a paced `servicePhase`. Native matrix cells retain fresh loads and
+check affordances and actually activate each control under native request
+interception: `intent proved; this action's request was stopped before leaving the browser`. Declare `serviceRequest` with
+an exact external origin and method. The phase owns real service effects and
+reaches declared `postState` entries on fresh size/theme loads by replaying
+that engine phase's real responses in memory, without repeating preparation; missing states or browser initiator evidence stay gaps. Failed or unrun service phases cannot pass dependent cells.
+A live-service policy runs cell starts serially and counts third-party browser
+traffic separately from explicit actions, stopping on observed 429/500/502.
+See the live-service section of the contract before enabling it.

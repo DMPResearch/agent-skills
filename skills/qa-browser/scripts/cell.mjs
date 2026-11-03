@@ -1,3 +1,9 @@
+import {matrixContext} from './service-boundary.mjs';
+import {captureState} from './capture-state.mjs';
+import {serviceAction,prepareServiceAction,ServiceAttributionGap} from './service-action.mjs';
+import {observeBuild} from './provenance.mjs';
+import {observeServiceTraffic} from './service-traffic.mjs';
+import {serviceAffordance} from './service.mjs';
 import {declareReturnPaths,recordDepartures,recordReturnEntry} from './return-path.mjs';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -9,22 +15,25 @@ import {trackNavigations} from './navigation.mjs';
 import {finding,documentOf} from './findings.mjs';
 import {inspectFindings,inventory,steps,withPrototypeChrome,NoEffectIncompleteError} from './browser.mjs';
 
-export async function runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver,sessions,terminals,pace,identities=new Map()}){
+export async function runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver,sessions,terminals,services,pace,signal,onServiceLimit,identities=new Map()}){
  const {flow,engine,theme,size,state}=t;
  const id=`${flow.id}-${state.id}-${engine}-${theme}-${size}`.replace(/[^a-z0-9.-]/gi,'_');
  const cell={id,screen:flow.id,state:state.id,engine,theme,size,complete:false,frames:[],failures:[],gaps:[],controls:[],repro:[`Open ${redact(new URL(flow.url,config.baseURL))}`,`Use ${engine}, ${size}, ${theme}, state ${state.id}`]};report.cells.push(cell);declareReturnPaths(cell,flow,state);
- let context,cellTimer,navigation,runtime,errors;const observed=[];
+ let context,cellTimer,navigation,runtime,errors,cellBuild;const observed=[];
  try{
   if(report.blockedAuthStates?.includes(state.id)||state.id==='signed-in'&&report.blockedAuthEngines?.includes(engine)){cell.gaps.push('authentication unavailable; cell not attempted');return;}
   if(!launches.has(engine))launches.set(engine,browserModule[engine].launch().then(b=>{browsers.set(engine,b);return b;}));
+  if(config.servicePhase?.cellLimiter){if(!pace)throw Error('live service cell admission requires pacing');await pace(config.servicePhase.cellLimiter,{signal});}
   const browser=await launches.get(engine);cell.browserVersion=browser.version();
   const [width,height]=size.split('x').map(Number);
-  context=await browser.newContext({viewport:{width,height},colorScheme:theme,deviceScaleFactor:1,storageState:state.id==='signed-in'?sessions?.get(engine):undefined});
+  context=await matrixContext(browser,{viewport:{width,height},colorScheme:theme,deviceScaleFactor:1,storageState:state.id==='signed-in'?sessions?.get(engine):undefined},{config,cell});
+  cell.serviceTraffic=observeServiceTraffic(context,report,{baseURL:config.baseURL,phase:'matrix',cell:id,engine,state:state.id,onLimit:config.servicePhase?onServiceLimit:undefined});
+  const intentBoundaries=new WeakMap();
   const closed=new AbortController();context.once('close',()=>closed.abort());
   if(pace){const runPace=pace;pace=key=>runPace(key,{signal:closed.signal});}
-  const observationConfig={...config,observations:flow.observations??config.observations};
+  const observationConfig={...config,intentBoundaries,observations:flow.observations??config.observations};
   errors=await observeErrors(context,cell,observed,observationConfig);
-  buildObserver?.attach(context);
+  buildObserver?.attach(context);cellBuild=observeBuild(config.baseURL);cellBuild.attach(context);
   cellTimer=setTimeout(()=>{cell.gaps.push('cell exceeded 60 second cap');context.close().catch(()=>{});},Math.min(config.cellTimeoutMs||60000,60000));
   context.setDefaultTimeout(Math.min(config.actionTimeoutMs||10000,10000));
   errors.phase('theme-init');
@@ -58,17 +67,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    if(entryBinding!==undefined&&entryBinding!==binding){cell.gaps.push('entry control inventory changes between resets: dynamic accessible names or control structure');throw Error('entry cannot be replayed consistently');}
    entryBinding=binding;
   };
-  const snap=async suffix=>withPrototypeChrome(page,config.prototypeChrome,async()=>{
-   for(const item of await inspectFindings(page))finding(cell,item.message,{...config,document:item.document,phase:'inspection'});
-   const path=join(out,`${id}-${suffix}.png`);await page.screenshot({path,fullPage:true,mask:config.redactSelectors?.map(s=>surface.locator(s))||[]});cell.frames.push(path);cell.frameDocuments||={};cell.frameDocuments[path]=documentOf(page.mainFrame());
-   for(const [index,frame]of page.frames().entries()){
-    if(frame!==page.mainFrame()&&!await (await frame.frameElement()).isVisible())continue;
-    const height=await frame.evaluate(()=>Math.max(document.documentElement.scrollHeight,document.body.scrollHeight));
-    const viewport=await frame.evaluate(()=>innerHeight);if(viewport<=0)continue;
-    for(let y=viewport*.8;y<height;y+=viewport*.8){await frame.evaluate(y=>scrollTo(0,y),y);const tile=join(out,`${id}-${suffix}-frame${index}-scroll${Math.round(y)}.png`);await page.screenshot({path:tile,mask:config.redactSelectors?.map(s=>surface.locator(s))||[]});cell.frames.push(tile);cell.frameDocuments[tile]=documentOf(frame);}
-    await frame.evaluate(()=>scrollTo(0,0));
-   }
-  });
+  const snap=suffix=>captureState(page,surface,cell,{config,out,id,suffix});
   await reset();recordReturnEntry(cell,page,flow,state,config);await snap('entry');cell.entryFrame=cell.frames[0];
   // Replay from the entry for each edge. Contracts own safe actions and their expectations.
   const queue=[[]],seen=new Set(),breakPlans=[],planned=new Set();let states=0;const reachedForms=new Set(),reachedInputs=new Set(),reachedControls=new Set();
@@ -99,13 +98,16 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    }
    for(const {item,loc,breaks} of bindings){
     if(!loc&&['input','textarea','select'].includes(item.tag)&&breaks.length){cell.controls.push({tag:item.tag,target:item.id?'#'+item.id:item.name,breakIndices:breaks.map(b=>flow.breaks.indexOf(b)),graphState:key,status:'break-contract-pending'});continue;}
-    if(item.disabled){cell.controls.push({selector:loc?.selector,tag:item.tag,status:'disabled'});continue;}
+    if(item.disabled&&!loc?.service){cell.controls.push({selector:loc?.selector,tag:item.tag,status:'disabled'});continue;}
     if(loc){
      reachedControls.add(loc.selector);
      const edgeKey=key+loc.selector;
      if(seen.has(edgeKey))continue;seen.add(edgeKey);
      if(loc.destructive&&!loc.isolated){cell.gaps.push('destructive control lacks isolated real sandbox data');continue;}
      if(!loc.safe){cell.gaps.push('control safety undeclared: '+redact(loc.selector));continue;}
+     if(loc.service){
+      try{await reset();for(const control of path)await act(control.steps);const prepared=await prepareServiceAction(page,surface,loc,{config:observationConfig,baseURL:config.baseURL,runNavigation:navigation.run,pace,onAbort:(p,b)=>intentBoundaries.set(p,b)});const affordance=await serviceAffordance(page,surface,loc);if(!services)throw Error('service phase unavailable');const servicePhase=services.defer(t,cell,loc,'control',config),entry={selector:loc.selector,status:'deferred',servicePhase,affordance};cell.controls.push(entry);try{entry.intent=await serviceAction(page,surface,prepared,{config:observationConfig,baseURL:config.baseURL,runNavigation:navigation.run,pace,onAbort:(p,b)=>intentBoundaries.set(p,b)});}catch(error){entry.intent={status:error instanceof ServiceAttributionGap?'incomplete':'fail',reason:error.message};if(error instanceof ServiceAttributionGap)cell.gaps.push(error.message);else cell.failures.push(error.message);}}catch(error){cell.failures.push('service affordance failed: '+redact(error.message));}continue;
+     }
      if(loc.terminal){
       if(!terminals){cell.gaps.push('terminal phase unavailable: '+redact(loc.selector));continue;}
       const terminal=terminals.defer(t,cell,loc,'control');cell.controls.push({selector:loc.selector,status:'deferred',scope:'engine',terminal});continue;
@@ -142,11 +144,14 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    const validAction=b.kind==='empty'?b.steps.some(s=>s.action==='fill'&&s.value===''):b.kind==='invalid'?b.steps.some(s=>s.action==='fill'&&(s.env||s.value)):b.kind==='double-submit'?(actions.includes('double-click')||b.steps.some(s=>s.action==='handoff'&&s.gesture==='double-click')):b.kind==='refresh'?actions.includes('reload'):b.kind==='back-forward'?actions.includes('back')&&actions.includes('forward'):true;
    if(!validAction){cell.gaps.push('break does not exercise '+b.kind);continue;}
    if(['signed-out','signed-in'].includes(b.kind)&&state.id!==b.kind)continue;
+   if(b.service){
+    try{await reset();for(const control of path)await act(control.steps);const prepared=await prepareServiceAction(page,surface,b,{config:observationConfig,baseURL:config.baseURL,runNavigation:navigation.run,pace,onAbort:(p,boundary)=>intentBoundaries.set(p,boundary)});const affordance=await serviceAffordance(page,surface,b);if(!services)throw Error('service phase unavailable');const servicePhase=services.defer(t,cell,b,'break',config),entry={break:b.kind,target:b.target,index:breakIndex,graphState,status:'deferred',servicePhase,affordance};cell.controls.push(entry);try{entry.intent=await serviceAction(page,surface,prepared,{config:observationConfig,baseURL:config.baseURL,runNavigation:navigation.run,pace,onAbort:(p,boundary)=>intentBoundaries.set(p,boundary)});}catch(error){entry.intent={status:error instanceof ServiceAttributionGap?'incomplete':'fail',reason:error.message};if(error instanceof ServiceAttributionGap)cell.gaps.push(error.message);else cell.failures.push(error.message);}}catch(error){cell.failures.push('service break affordance failed: '+redact(error.message));}continue;
+   }
    if(b.terminal){
     if(!terminals){cell.gaps.push('terminal phase unavailable: '+b.kind);continue;}
     const terminal=terminals.defer(t,cell,b,'break');cell.controls.push({break:b.kind,target:b.target,index:breakIndex,graphState,status:'deferred',scope:'engine',terminal});continue;
    }
-   try{await reset();for(const control of path)await act(control.steps);if(b.coverageTarget){const current=await inventory(surface);const matched=await Promise.all(current.map(async item=>(await matchingBreaks(surface,item,[b],state.id)).length));if(!matched.some(Boolean))throw Error('break alias no longer binds its reached input');}if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});errors.phase('break '+b.kind+' '+breakIndex);const effects=await act(b.steps,b.target);if(effects.some(e=>e.type==='handoff')){cell.controls.push({break:b.kind,target:b.target,index:breakIndex,graphState,status:'pass',effects});continue;}const settled=await runtime.settle();await snap('break-'+b.kind+'-'+breakIndex+'-state'+number+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:settled?'pass':'incomplete'});}
+   try{await reset();for(const control of path)await act(control.steps);if(b.coverageTarget){const current=await inventory(surface);const matched=await Promise.all(current.map(async item=>(await matchingBreaks(surface,item,[b],state.id)).length));if(!matched.some(Boolean))throw Error('break alias no longer binds its reached input');}if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});errors.phase('break '+b.kind+' '+breakIndex);const effects=['empty','invalid'].includes(b.kind)?(await serviceAction(page,surface,b,{config:observationConfig,mode:'local',onViolation:message=>cell.failures.push(message),baseURL:config.baseURL,runNavigation:navigation.run,pace,onAbort:(p,boundary)=>intentBoundaries.set(p,boundary)}),[]):await act(b.steps,b.target);if(effects.some(e=>e.type==='handoff')){cell.controls.push({break:b.kind,target:b.target,index:breakIndex,graphState,status:'pass',effects});continue;}const settled=await runtime.settle();await snap('break-'+b.kind+'-'+breakIndex+'-state'+number+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:settled?'pass':'incomplete'});}
    catch(error){errors.caught(error);cell.failures.push('break failed: '+b.kind+' on '+redact(b.target)+'; '+redact(error.message));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:'fail'});cell.repro.push('Run '+b.kind+' on '+redact(b.target),...b.steps.map(s=>redact(s.action+' '+(s.selector||'page')+' '+(s.env?'[environment]':s.value??''))));}
   }
   for(const entry of cell.controls.filter(c=>c.status==='break-contract-pending'))entry.status=cell.controls.some(c=>c.graphState===entry.graphState&&entry.breakIndices.includes(c.index)&&['pass','fail','shared'].includes(c.status))?'covered-by-break-contract':'incomplete';
@@ -161,20 +166,21 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   await runtime?.audit();
   cell.gaps=[...new Set(cell.gaps)];if(cell.gaps.length)cell.complete=false;
   cell.failures=[...new Set([...cell.failures,...observed])];clearTimeout(cellTimer);
+  if(cellBuild)cell.build=await cellBuild.finish();
   await buildObserver?.finish();if(context)await context.close().catch(()=>{});
   writeFileSync(join(out,'checkpoint.json'),JSON.stringify({...report,running:true},null,2));
  }
 }
-async function matchingControl(page,item,declared){
+export async function matchingControl(page,item,declared){
  for(const c of declared){
   const match=await page.locator(c.selector).evaluateAll((els,path)=>els.some(e=>e===document.querySelector(path)),item.path);
   if(match)return c;
  }
 }
 
-function applicableBreak(b,state){return (!b.state||b.state===state)&&(!['signed-out','signed-in'].includes(b.kind)||b.kind===state);}
+export function applicableBreak(b,state){return (!b.state||b.state===state)&&(!['signed-out','signed-in'].includes(b.kind)||b.kind===state);}
 
-async function matchingBreaks(page,item,declared,state){
+export async function matchingBreaks(page,item,declared,state){
  const matches=[];
  for(const b of declared){
   if(!b.target||b.notApplicable||!applicableBreak(b,state))continue;

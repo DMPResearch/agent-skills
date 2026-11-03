@@ -216,3 +216,8 @@ CI integration or accessibility dependency is implemented here.
 The first catalogue group is the no-AI-slop hard gate from owner AGENTS.md
 section 0: design, writing, code and independent review, all blockers. Each
 critique checks it first; author self-review cannot satisfy the gate.
+
+The qa-browser browser suite has its own serial entry point:
+`QA_PW_PATH=/absolute/path/to/package.json node skills/qa-browser/scripts/run-tests.mjs`.
+Use it instead of wildcard `node --test`; the fixtures own real browsers and
+retain their hard deadlines. See `skills/qa-browser/references/testing.md`.

@@ -576,3 +576,43 @@ verified signed-in identity where applicable, no functional failure and no
 independent coverage gap. Missing, failed, skipped or differently sized cells
 cannot satisfy it. The report retains the exact counterpart cell receipt.
 Each flow's own state and control/break coverage requirements remain unchanged.
+
+### Live service actions
+
+A control or break may declare `service:true`, with its exact accessible `name`
+and `role`. Its normal expected-outcome steps remain mandatory. A break uses
+its selector (when supplied) or target as the interactive element; mutation
+steps must still stay within its declared target.
+
+Configure `servicePhase:{size:"390x660",theme:"light",limiter:"writes",cellLimiter:"loads"}`
+and positive millisecond entries for both names in `serviceIntervals`. The
+caller owns these rates. This enables serial cell starts, admitted through the
+existing limiter, while preserving a fresh native context and real page loads
+for every matrix cell. Real per-cell session verification remains active and
+its browser requests are counted. The phase executes each declared flow/route
+control/break once per engine and auth state at the selected size/theme. CSS
+selectors on different flows or routes do not establish shared functional coverage.
+Terminal cleanup and isolated real-session adapters apply to terminal, isolated
+or destructive service recipes. Nonconflicting service recipes do not provision
+extra terminal identities. Cold entry and phase contexts also use the cell
+admission limiter; cancellation releases queued reservations.
+
+Each service recipe must declare `serviceRequest:{origin,method}`: an exact external HTTP(S) origin and uppercase method. Native matrix cells first run safe local setup, then check visibility, enabled state, exact name/role, scroll reachability, tap geometry, clipping, hit testing and keyboard focus. They actually activate the declared control under a browser-boundary route. An attributed matching attempt records `intent proved; this action's request was stopped before leaving the browser`; the request is aborted and the original page is closed/reset without judging any post-abort result. Missing attempts fail, wrong method/host fails, and unavailable initiator evidence is a gap. OAuth handoffs and native form posts use the same boundary. Local empty/invalid recipes execute at every size with external requests intercepted. The validation guard stays installed until document replacement or the next guarded action; intercepted late requests are stopped.
+
+A request must start within 500 ms of a trusted activation on the declared element. The observer waits at most 150 ms for browser metadata. Native form/link destinations are checked against their actual DOM attributes (including named-control shadowing). Chromium script calls additionally require the declared element's actual handler in the browser initiator stack; timer ancestry cannot supply proof. Missing browser attribution, including WebKit script requests whose initiator it does not expose, yields a gap. Declared external observation classes may remain SDK/probe traffic but never supply action proof. Same-origin-only controls cannot obtain a service pass. This is evidence of the observed activation and request, not a claim about arbitrary application code scheduled beyond the bounded observation.
+
+Real service phases observe first-party build bytes through the same build observer as native cells, match every dependent cell before and after the action, and enforce the asset manifest through the shared runtime audit. Missing/mixed/different builds cannot supply shared coverage. Fresh entry bytes must match before entry actions execute and before any recorded response is served, including requests made while the app mounts.
+
+A non-handoff service recipe may declare `postState:{flow,state}` naming an own-origin flow and declared state. Its real phase response transcript, cookies and entry storage stay in process memory only. Each matrix entry starts a new context at the required viewport and theme before the app mounts, replays the phase's entry/action chain, and then runs the existing layout, overflow, affordance and local input checks. The report states `service response replayed from real call in phase <id>`; this is recorded-response bootstrap, not another service call. The real phase still supplies functional service proof once per engine. The observed effective document MIME type is retained when the original response omitted that header. No invented success body, persistent HAR, disk transcript or cross-run replay is permitted. Request methods and exact origin/path/query-key shape must match a recorded response; unmatched requests are intercepted and fail. Only first-party requests continue to the served app. Recorded document redirects to our origin may restore the browser-applied cookie state and follow the recorded Location through a real app navigation; unsupported redirect semantics leave a gap.
+
+Fresh entry failure is attempted at most twice for that phase. Remaining views may keep frames labeled `resized from a live page`, with the visible gap `fresh-load layout not proven`; these never obtain a complete verdict. Resized-only fallback performs read-only inspection and capture; it does not fire controls or claim local breaks ran. Conflicting service continuations stay on the original real entry, within the limiter, and stop when fresh-entry replay was not proven. No silent reauthentication or repeat preparation is supplied. Every requested state size remains in coverage, including missing captures. The mandatory shortest-phone/widest-desktop full-size review plan applies to the fresh frames.
+
+Non-phase contexts block service workers; apps requiring them retain that functional coverage in their real phase. HTTP interception covers the whole browser context, including popup initial navigations. WebSocket routing is installed before pages are created; unexpected external sockets and unadmitted popup traffic fail and quarantine the context from further external requests. A blocked unexpected attempt is a failure, never a successful intent receipt. In Chromium, a pagehide keepalive fetch can bypass Playwright routing and offline mode during teardown, so the intent receipt covers the intercepted action request and any observed teardown traffic is recorded separately. Before a matrix page or context closes, the boundary waits for its gesture, observed requests awaiting interception, network-decision acknowledgements and socket rejection to settle. This close barrier is bounded at 2,000 ms within existing cell caps; an undecided interception is aborted at 1,500 ms and fails the cell. An unresolved interception or gesture fails the cell and refuses that close rather than releasing a pending request. Request/route/abort/close checkpoints retain timings and redacted URLs, never response bodies or credentials.
+
+`serviceTraffic.total` counts observed HTTP attempts; `intercepted`, `replayed` and `serviceActions` distinguish suppressed attempts, recorded-response bootstrap and real allowed requests. The remaining attempts include SDK initialization, session checks and probes. They are not inferred from the matrix size and Node-side adapter HTTP calls remain the adapter's responsibility to report. The explicit service-action budget covers real phase recipes; observed SDK attempts are counted separately and the teardown limit above still applies.
+
+Standing providers still admit a fresh blank page per matrix cell through `beginCell`. Capture the real entry frame before `checkService`: that function now checks affordance and exercises intercepted intent, then closes the aborted page. Its returned proof and imported ledger retain the intent outcome; missing or failed intent cannot inherit a phase pass. External command captures cannot establish this native boundary and remain refused.
+
+The local-validation observation bound is 500 ms after its assertions, matching the activation window; its interception guard stays active until real document replacement or another guarded action. Nothing after a deliberate request abort is used as a successful UI outcome.
+
+The intentional-abort cutoff never excuses earlier observations. Cancellation audits retain the monotonic time of the actual request failure, even when the audit runs after an intent abort; first-party history remains a failure or gap.
