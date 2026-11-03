@@ -65,27 +65,31 @@ export function terminalQueue(){
    for(const item of pending.values()){
     const {task,recipe,kind,cells,id}=item,{flow,state,engine,theme,size}=task;
     const record={id,scope:'route-engine',route:flow.url,engine,screen:flow.id,kind,target:recipe.selector||recipe.target,cells:cells.map(c=>c.id),status:'incomplete'};report.terminalChecks.push(record);
-    let context,timer,entered=false,observer,errors;
+    let context,timer,entered=false,observer,errors,isolated=false,terminalPace;
     const runtime={screen:flow.id,state:state.id,engine,size,failures:[],gaps:[],diagnostics:[]};
     try{
      if(!recipe.safe||recipe.destructive&&!recipe.isolated)throw Error('terminal control requires declared safe isolated data');
      const [width,height]=size.split('x').map(Number);
-     context=await browsers.get(engine).newContext({viewport:{width,height},colorScheme:theme,storageState:state.id==='signed-in'?sessions.get(engine):undefined});context.setDefaultTimeout(10000);
+     isolated=Boolean(adapter?.prepareTerminal);if(isolated&&!adapter.cleanupTerminal)throw Error('prepareTerminal requires cleanupTerminal for its isolated real session');
+     record.isolation=isolated?'adapter-session':'shared-entry';
+     context=await browsers.get(engine).newContext({viewport:{width,height},colorScheme:theme,storageState:!isolated&&state.id==='signed-in'?sessions.get(engine):undefined});context.setDefaultTimeout(10000);
      errors=await observeErrors(context,runtime);errors.phase('terminal-entry');
+     const closed=new AbortController();context.once('close',()=>closed.abort());terminalPace=key=>env.pace(key,{signal:closed.signal});
      timer=setTimeout(()=>context.close().catch(()=>{}),60000);
      if(config.themeInit)await context.addInitScript(config.themeInit.replaceAll('THEME',JSON.stringify(theme)));
-     await adapter?.authenticate?.({context,state:state.id,config,flow,pace:env.pace});
-     if(state.id==='signed-in')await verifyIdentity(adapter,{context,config,flow,state:state.id,engine},env.identities);
+     await adapter?.authenticate?.({context,state:state.id,config,flow,pace:terminalPace});
+     if(isolated)await adapter.prepareTerminal({context,config,flow,state:state.id,engine,recipe,kind,pace:terminalPace});
+     if(state.id==='signed-in')await verifyIdentity(adapter,{context,config,flow,state:state.id,engine},isolated?new Map():env.identities);
      const page=await context.newPage(),root=flow.frame?page.frameLocator(flow.frame):page,navigation=trackNavigations(page);
      observer=observeRuntime(page,runtime,{...config,observations:flow.observations});
-     await adapter?.reset?.({page,flow,state:state.id,config,pace:env.pace});
+     await adapter?.reset?.({page,flow,state:state.id,config,pace:terminalPace});
      await navigation.run(()=>page.goto(new URL(flow.url,config.baseURL).href,{waitUntil:'load'}));
-     await adapter?.enter?.({page,flow,state:state.id,pace:env.pace});
-     await steps(page,[...state.setup||[],...flow.steps],root,undefined,navigation.run,env.pace);
+     await adapter?.enter?.({page,flow,state:state.id,pace:terminalPace});
+     await steps(page,[...state.setup||[],...flow.steps],root,undefined,navigation.run,terminalPace);
      if(!await observer.settle())throw Error('in-flight entry requests unresolved before terminal action');
      await root.locator(recipe.selector||recipe.target).waitFor({state:'attached'});
      entered=true;errors.phase('terminal-action');
-     await steps(page,recipe.steps,root,kind==='break'?recipe.target:undefined,navigation.run,env.pace);
+     await steps(page,recipe.steps,root,kind==='break'?recipe.target:undefined,navigation.run,terminalPace);
      const settled=await observer.settle();
      const failures=await inspect(page);if(failures.length)throw Error(failures.join('; '));
      const path=join(out,'terminal-'+id+'.png');await page.screenshot({path,fullPage:true,mask:config.redactSelectors?.map(s=>root.locator(s))||[]});cells[0].frames.push(path);record.frame=path;
@@ -93,7 +97,7 @@ export function terminalQueue(){
      const gaps=navigation.unclassified().filter(r=>!observer.expectedCancellation(r));if(gaps.length)throw Error('unclassified cancelled request: '+redact(gaps[0].url()));
      record.status=runtime.failures.length?'fail':settled&&!runtime.gaps.length?'pass':'incomplete';
     }catch(error){errors?.caught(error);record.error=redact(error.message);if(entered){record.status='fail';for(const cell of cells)cell.failures.push('shared terminal expected effect failed: '+record.target+'; '+record.error);}else report.gaps.push('shared terminal check unavailable: '+id+'; '+record.error);}
-    finally{if(observer)await observer.settle();await errors?.finish();clearTimeout(timer);if(context)await context.close().catch(()=>{});if(runtime.failures.length)record.status='fail';else if(runtime.gaps.length)record.status='incomplete';}
+    finally{if(observer)await observer.settle();await errors?.finish();if(isolated&&context)try{await adapter.cleanupTerminal({context,config,flow,state:state.id,engine,recipe,kind,pace:terminalPace});}catch(error){record.status='incomplete';runtime.gaps.push('isolated terminal cleanup failed: '+redact(error.message));}clearTimeout(timer);if(context)await context.close().catch(()=>{});if(runtime.failures.length)record.status='fail';else if(runtime.gaps.length)record.status='incomplete';}
     for(const cell of cells){
      cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps);cell.diagnostics||=[];cell.diagnostics.push(...runtime.diagnostics);cell.observations||=[];cell.observations.push(...runtime.observations||[]);
      if(['pass','fail'].includes(record.status))cell.gaps=cell.gaps.filter(g=>g!=='terminal check pending: '+id);

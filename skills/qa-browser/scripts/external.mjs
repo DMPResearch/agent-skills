@@ -2,7 +2,9 @@ import {readFileSync,existsSync} from 'node:fs';
 import {redact,breakKinds} from './contract.mjs';
 
 const key=r=>[r.screen,r.engine,r.theme,r.size||`${r.width}x${r.height}`].join('/');
-export function importCrawl(data,{expected,checkFiles=true}){
+export function importCrawl(data,{expected,checkFiles=true,deferred={controls:[],breaks:[]}}){
+ const deferredCheck=c=>c.deferred===true&&c.pass===undefined&&deferred.breaks.some(b=>b.kind===c.kind&&b.target===c.target);
+ const satisfied=c=>c.pass===true||deferredCheck(c);
  const rows=new Map(),paths=new Set();
  for(const r of data.results||[]){
   if(rows.has(key(r))||paths.has(r.path))throw Error('duplicate capture key or frame path: '+key(r));
@@ -34,13 +36,14 @@ export function importCrawl(data,{expected,checkFiles=true}){
   const edge=(data.edges||[]).find(x=>key(x)===key(e));
   const controls=(data.interactions||[]).filter(x=>x.type!=='navigation-recovery'&&key(x)===key(e));
   const functionalFailures=[];
-  for(const check of edge?.checks||[])if(!check.pass)functionalFailures.push('break check failed: '+check.kind);
-  for(const kind of breakKinds)if(!edge?.checks?.some(c=>c.kind===kind&&c.pass===true))functionalFailures.push('missing break check: '+kind);
+  for(const check of edge?.checks||[])if(!satisfied(check)||check.deferred&&!deferredCheck(check))functionalFailures.push('break check failed: '+check.kind);
+  for(const kind of breakKinds)if(!edge?.checks?.some(c=>c.kind===kind&&satisfied(c)))functionalFailures.push('missing break check: '+kind);
   const targets=[...(edge?.forms||[]).map(target=>({target,kinds:['empty','invalid','double-submit','refresh']})),...(edge?.inputs||[]).map(target=>({target,kinds:['empty','invalid','double-submit','refresh']})),...(edge?.controls||[]).filter(c=>!c.disabled).map(c=>({target:typeof c==='string'?c:c.selector||c.path||c.id,kinds:['double-submit','refresh','back-forward']}))];
-  for(const {target,kinds}of targets)for(const kind of kinds)if(!target||!edge?.checks?.some(c=>c.kind===kind&&c.target===target&&c.pass===true))functionalFailures.push('missing break check: '+kind+' for '+redact(target||'unidentified control'));
+  for(const {target,kinds}of targets)for(const kind of kinds)if(!target||!edge?.checks?.some(c=>c.kind===kind&&c.target===target&&satisfied(c)))functionalFailures.push('missing break check: '+kind+' for '+redact(target||'unidentified control'));
   if(!edge)functionalFailures.push('no control/flow evidence supplied for this entry');
   else if(edge.controls.some(c=>!c.disabled)&&!controls.length)functionalFailures.push('no inventoried controls were exercised');
   for(const c of controls){
+   if(c.deferred===true){if(!deferred.controls.some(r=>r.selector===c.selector)||c.changed===true||c.error||c.effects?.length)functionalFailures.push('unbound deferred control evidence refused');continue;}
    if(c.effects?.some(e=>e.type==='no-effect'))functionalFailures.push('unbound external no-effect evidence refused: '+redact(c.label||String(c.index)));
    if(c.error)functionalFailures.push('control failed: '+redact(c.label||String(c.index)));
    else if(c.changed!==true&&c.disabled!==true&&!c.effects?.some(e=>(e.type==='file-chooser'&&e.observed===true)||(e.type==='empty-guard'&&e.input&&e.empty===true&&e.unchanged===true&&e.noMutationRequests===true)))functionalFailures.push('control has no verified state or navigation effect: '+redact(c.label||String(c.index)));
@@ -49,6 +52,7 @@ export function importCrawl(data,{expected,checkFiles=true}){
   for(const error of runtime){
    if(error.screen===e.screen&&error.engine===e.engine&&error.theme===e.theme&&error.width===Number(e.size.split('x')[0])&&(!error.height||error.height===Number(e.size.split('x')[1])))failures.push('runtime error: '+redact(error.type||'unknown'));
   }
+  if((edge?.checks||[]).some(c=>c.deferred)||controls.some(c=>c.deferred))gaps.push('terminal evidence deferred; standing terminal phase required');
   failures.push(...functionalFailures.map(f=>'functional: '+f));
   const extra=controls.map(c=>r.path.replace(/\.png$/,`-control-${c.index}.png`)).filter(p=>checkFiles&&existsSync(p));
   return {id,screen:e.screen,state:e.state||r.state||'unspecified',engine:e.engine,browserVersion:r.browserVersion||data.summary?.browserVersions?.[e.engine]||'unknown',theme:e.theme,size:e.size,complete:!gaps.length,entryFrame:r.path,frames:gaps.length?[]:[r.path,...extra],failures:[...new Set(failures)],gaps,controls,functional:failures.length?'fail':'pass',functionalFailures,repro:[`Open the served entry for ${e.screen}`,`Use ${e.engine}, ${e.theme}, ${e.size}`,...controls.filter(c=>c.error||c.changed===false).map(c=>'Activate '+redact(c.label||String(c.index)))]};

@@ -286,9 +286,9 @@ The ledger names the route/engine scope and dependent cells; it does not
 claim the action was repeated at every viewport. Its actual resulting capture
 belongs to the first dependent cell. Missing terminal evidence leaves those
 cells incomplete. Different terminal recipes are distinct checks: an adapter
-must not silently reauthenticate after one revokes the shared session. Declare
-unsupported mutually exclusive terminal scenarios unrun rather than claim
-that another recipe or route covered them. If the first route revokes shared
+must not silently reauthenticate after one revokes the shared session. Use explicit isolated terminal sessions for conflicting recipes; they cannot
+borrow another recipe or route’s result. Without the isolated hook, leave
+unsupported mutually exclusive terminal scenarios unrun. If the first route revokes shared
 auth, a later route must verify the session and remain unrun when it is dead.
 It cannot borrow the first route's result or sign in again silently.
 
@@ -411,3 +411,42 @@ URL in diagnostics. Same-document history changes, explicit aborts without a
 replacement, failed navigations and unowned navigation remain gaps. Browser
 requests without a cancellation event do not receive a cancellation receipt.
 First-party HTTP, transport and asset-integrity failures are never exempted.
+
+### Persistent standing entry inside the run
+
+Set a flow’s `capture:"standing"` and export
+`captureStanding({context,config,flow,state,engine,matrix,out,pace,beginCell})`
+from the trusted adapter. This hook runs once per selected flow/state/engine
+after ordinary cells and before all terminal checks. Its live context and pending
+service entry survive the whole supplied theme/viewport matrix. Prepare the real
+state once, never fake it or restart preparation per cell. The provider owns its
+existing traversal and real state transitions; the tool does not add another
+crawler. It returns the existing standing-crawl `summary/results/edges/interactions`
+shape with exact `state` on each result and unique PNG paths.
+
+Await `beginCell({theme,size})` before each supplied matrix cell. The tool validates
+exact coverage, enforces the existing 60-second cell and 30-minute run bounds,
+and verifies signed-in identity for every cell. Missing, duplicate or unexpected
+keys refuse the provider result. The provider applies the declared theme,
+viewport, masking and flow assertions and supplies real control/break outcomes.
+Runtime observations and read-only error provenance remain active on its context.
+Pacing shares the same queue as normal entry and terminal work. Sessions and
+pending entry objects stay in memory. A timeout closes only that owned context.
+
+A terminal interaction uses `selector,deferred:true` instead of a claimed
+effect; a terminal break check uses `kind,target,deferred:true` without `pass`.
+Only exact declared terminal recipes can defer. They remain pending gaps until
+the tool runs the actual terminal phase; imported deferred evidence alone can
+never pass. Missing terminal markers remain incomplete.
+
+For mutually exclusive terminal recipes, export both
+`prepareTerminal({context,config,flow,state,engine,recipe,kind,pace})` and
+`cleanupTerminal` with the same arguments. Every distinct route/engine/recipe
+receives a fresh empty context and explicit isolated real session preparation.
+Signed-in identity is verified there; the session is never silently borrowed
+or recreated after failure. Cleanup always runs, including setup/action failure;
+cleanup failure leaves no verdict. The ledger records `isolation:"adapter-session"`.
+The adapter paces actual preparation immediately before the service operation
+and removes only its own session/data. This costs one explicitly isolated real
+entry per conflicting terminal recipe, not one per matrix cell. Without these
+hooks, existing shared-session semantics and unavailable checks remain visible.

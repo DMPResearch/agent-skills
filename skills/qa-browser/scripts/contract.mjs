@@ -15,6 +15,7 @@ export function validate(c) {
  for(const f of c.flows){
   if(!f.id||ids.has(f.id)||!f.url||!f.entry||!Array.isArray(f.states)||!f.states.length||!Array.isArray(f.steps)||!Array.isArray(f.controls)||!Array.isArray(f.breaks))throw Error('invalid or duplicate flow contract');
   ids.add(f.id);
+  if(f.capture!==undefined&&f.capture!=='standing')throw Error('flow capture must be standing when a persistent entry needs a provider');
   validateObservations(f.observations,{baseURL:c.baseURL||c.start?.url,serviceEnvironment:c.serviceEnvironment},'flows.'+(ids.size-1)+'.observations');
   if(typeof f.main!=='boolean')throw Error('flow main-screen ownership required');
   if(f.states.some(s=>typeof s!=='string'&&(!s.id||!Array.isArray(s.setup))))throw Error('invalid auth/data state');

@@ -27,7 +27,7 @@ export function observeRuntime(page,cell,config={},failures=cell.failures){
    await new Promise(resolve=>setTimeout(resolve,25));
    for(const request of pending)if(expected(request,'pending'))pending.delete(request);
    if(!pending.size)return true;
-  }while(Date.now()<deadline&&!page.isClosed());
+  }while(Date.now()<deadline&&!page.isClosed?.());
   for(const request of pending)cell.gaps.push('in-flight request unresolved after 2000 ms: '+request.method()+' '+redact(request.url()));
   return false;
  }};

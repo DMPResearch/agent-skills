@@ -8,6 +8,7 @@ import {spawn,execFileSync} from 'node:child_process';
 import {validate,selectScope,matrix,redact} from './contract.mjs';
 import {observeBuild} from './provenance.mjs';
 import {prepareEngines,terminalQueue,servicePacer} from './phases.mjs';
+import {captureStanding} from './standing.mjs';
 import {runCell} from './cell.mjs';
 import {importCrawl} from './external.mjs';
 import {command,critique,save} from './report.mjs';
@@ -93,7 +94,7 @@ try{
    previous.sourceRoot!==report.sourceRoot||buildKey(previous.build)!==buildKey(report.build)||
    [...previous.gaps,...report.gaps].includes('working tree differs from recorded head'))throw Error('review resume requires matching clean source, config and served build identities; run a fresh capture');
   if(!previous.cells?.length)throw Error('review resume has no prior captured cells');
-  for(const field of ['cells','expectedCells','scope','servedBuild','sharedEntry','terminalChecks','runFailures','captureProvenance','runtimeDiagnostics','unrun'])if(previous[field]!==undefined)report[field]=previous[field];
+  for(const field of ['cells','expectedCells','scope','servedBuild','sharedEntry','terminalChecks','standingEntry','runFailures','captureProvenance','runtimeDiagnostics','unrun'])if(previous[field]!==undefined)report[field]=previous[field];
   report.gaps.push(...previous.gaps);config.review={...config.review,resume:true,splitTimedOut:args.includes('--split-timed-out')};report.resumedFrom=previous.finished;
  }else{
  if(config.standingCrawl){
@@ -118,12 +119,14 @@ try{
  const tasks=scope.flatMap(s=>matrix(s.tier).flatMap(cell=>(s.tier==='global'?s.flow.states.slice(0,1):s.flow.states).map(state=>({...s,...cell,state:typeof state==='string'?{id:state}:state}))));
  report.expectedCells=tasks.length;
  const pace=servicePacer(config.serviceIntervals),terminals=terminalQueue();
- const env={config,report,out,browserModule,browsers,launches,adapter,buildObserver,pace,terminals,identities:new Map()};
+ const env={config,report,out,browserModule,browsers,launches,adapter,buildObserver,pace,terminals,identities:new Map(),remaining:()=>deadline-Date.now(),stopping:()=>stopping};
  const sessions=await prepareEngines(tasks,env);env.sessions=sessions;
+ const nativeTasks=tasks.filter(t=>t.flow.capture!=='standing');
  let next=0;
  await Promise.all([0,1].map(async()=>{
-  while(next<tasks.length&&!stopping&&Date.now()<deadline){const t=tasks[next++];await runCell(t,env);}
+  while(next<nativeTasks.length&&!stopping&&Date.now()<deadline){const t=nativeTasks[next++];await runCell(t,env);}
  }));
+ if(!stopping&&Date.now()<deadline)await captureStanding(tasks.filter(t=>t.flow.capture==='standing'),env);
  if(!stopping&&Date.now()<deadline)await terminals.run(env);
  for(const {flow}of scope)for(const [index,b]of flow.breaks.entries())if(b.state&&!b.notApplicable&&!report.cells.some(c=>c.screen===flow.id&&c.state===b.state&&c.controls.some(x=>x.index===index&&['pass','fail','shared'].includes(x.status))))report.gaps.push('declared break scope unrun: '+flow.id+' break '+index+' state '+b.state);
  if(report.cells.length!==tasks.length)report.gaps.push(`unrun cells: ${tasks.length-report.cells.length}`);
