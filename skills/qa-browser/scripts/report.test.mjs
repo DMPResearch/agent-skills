@@ -32,3 +32,9 @@ test('credentials and URL queries do not reach runtime evidence',()=>{
 test('a declared click without an expected outcome is not coverage',()=>{
  assert.throws(()=>validate({version:1,baseURL:'http://localhost',flows:[{id:'x',main:true,entry:'x.js',url:'/',states:['signed-out'],steps:[],controls:[{selector:'button',steps:[{action:'click',selector:'button'}]}],breaks:[]}]}),/expected effect/);
 });
+
+test('non-Bearer authorization is scrubbed while an Unauthorized error keeps its meaning',()=>{
+ const value=['abc','12'].join('');
+ for(const scheme of ['Token','Custom'])assert.ok(!redact('Authorization: '+scheme+' '+value).includes(value));
+ assert.equal(redact('Unauthorized: access denied'),'Unauthorized: access denied');
+});

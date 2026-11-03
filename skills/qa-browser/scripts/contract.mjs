@@ -56,8 +56,9 @@ export function verdict(cells,gaps) {
 }
 export function redact(value) {
  return String(value).replace(/\b(?:set-cookie|cookie)\s*:\s*[^\r\n]+/gi,'cookie: [redacted]')
+ .replace(/(\b(?:proxy-)?authorization\b["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\r\n]+)/gi,'$1[redacted]')
  .replace(/\b(Bearer|Basic)\s+\S+/gi,'$1 [redacted]')
- .replace(/(\b(?:[a-z0-9_$-]*(?:password|passwd|otp|token|secret|session|auth)[a-z0-9_$-]*|pwd|pin|api[_-]?key|sid|csrf)\b["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;)}\]]+)/gi,'$1[redacted]')
+ .replace(/(\b(?!unauthorized\b)(?:[a-z0-9_$-]*(?:password|passwd|otp|token|secret|session|auth)[a-z0-9_$-]*|pwd|pin|api[_-]?key|sid|csrf)\b["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;)}\]]+)/gi,'$1[redacted]')
  .replace(/https?:\/\/[^\s"'<>]+/g,raw=>{try{const u=new URL(raw);return u.origin+u.pathname.split('/').map(p=>p.length>24?'[redacted]':p).join('/');}catch{return '[url]';}})
  .replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/gi,'[email]')
  .replace(/\b[A-Za-z0-9_+\/-]{28,}={0,2}\b/g,'[redacted]');
