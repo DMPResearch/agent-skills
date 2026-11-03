@@ -401,3 +401,11 @@ explicitly unknown; the initial blank document is identified only before any
 navigation. Caught adapter, entry, control and break exceptions keep their cause
 and the current lifecycle context. No observer prevents an exception or changes
 storage, authentication or product state.
+
+Cancelled subresources use the same committed-document evidence as body reads.
+A tool action which actually replaces their document records request URL,
+underlying cancellation error, original navigation generation and replacement
+URL in diagnostics. Same-document history changes, explicit aborts without a
+replacement, failed navigations and unowned navigation remain gaps. Browser
+requests without a cancellation event do not receive a cancellation receipt.
+First-party HTTP, transport and asset-integrity failures are never exempted.

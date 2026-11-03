@@ -166,6 +166,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
  finally{
   if(runtime)await runtime.settle();
   await errors?.finish();
+  if(navigation)cell.diagnostics.push(...navigation.cancellations().map(r=>({kind:'navigation-cancellation',...r,url:redact(r.url),replacement:redact(r.replacement),error:redact(r.error)})));
   if(navigation)cell.gaps.push(...navigation.unclassified().filter(r=>!runtime?.expectedCancellation(r)).map(r=>'unclassified cancelled request: '+redact(r.url())));
   cell.gaps=[...new Set(cell.gaps)];if(cell.gaps.length)cell.complete=false;
   cell.failures=[...new Set([...cell.failures,...observed])];clearTimeout(cellTimer);

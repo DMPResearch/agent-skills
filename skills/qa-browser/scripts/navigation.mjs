@@ -58,7 +58,8 @@ export function trackNavigations(page){
     return result;
    }finally{scopes.splice(scopes.indexOf(scope),1);}
   },
-  unclassified:()=>cancelled.filter(r=>!committed.has(superseded.get(r)))
+  cancellations:()=>cancelled.filter(r=>resources.get(r)?.replacement).map(r=>({url:r.url(),error:r.failure()?.errorText||'',replacement:resources.get(r).replacement,generation:resources.get(r).generation,reason:'request cancelled by committed tool document replacement'})),
+  unclassified:()=>cancelled.filter(r=>!resources.get(r)?.replacement&&!committed.has(superseded.get(r)))
  };
  trackers.set(page,tracker);return tracker;
 }
