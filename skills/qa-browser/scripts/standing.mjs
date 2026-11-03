@@ -18,7 +18,7 @@ export async function captureStanding(tasks,env){
    if(!env.launches.has(engine))env.launches.set(engine,env.browserModule[engine].launch().then(b=>{browsers.set(engine,b);return b;}));
    const browser=await env.launches.get(engine);context=await browser.newContext({storageState:state.id==='signed-in'?env.sessions.get(engine):undefined});context.setDefaultTimeout(10000);
    const closed=new AbortController();context.once('close',()=>closed.abort());const runPace=key=>pace(key,{signal:closed.signal});
-   errors=await observeErrors(context,runtime);errors.phase('standing-entry');observer=observeRuntime(context,runtime,{...config,observations:flow.observations});env.buildObserver?.attach(context);
+   errors=await observeErrors(context,runtime,runtime.failures,config);errors.phase('standing-entry');observer=observeRuntime(context,runtime,{...config,observations:flow.observations});env.buildObserver?.attach(context);
    let rejectCell;const cellDeadline=new Promise((_,reject)=>{rejectCell=reject;});const cellLimit=Math.max(1,Math.min(config.cellTimeoutMs||60000,60000));
    const arm=label=>{clearTimeout(cellTimer);cellTimer=setTimeout(()=>{const message='standing '+label+' exceeded '+cellLimit+' ms cell cap';runtime.gaps.push(message);context.close().catch(()=>{});rejectCell(Error(message));},cellLimit);};
    const wanted=new Set(group.map(t=>t.theme+'/'+t.size)),begun=new Set();
@@ -41,7 +41,7 @@ export async function captureStanding(tasks,env){
    for(const cell of imported.cells){
     for(const path of cell.frames){if(claimedPaths.has(path))throw Error('duplicate standing frame path: '+path);claimedPaths.add(path);}
     cell.gaps=cell.gaps.filter(g=>g!=='terminal evidence deferred; standing terminal phase required');cell.complete=cell.gaps.length===0;
-    cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps,...imported.gaps);cell.diagnostics=runtime.diagnostics;cell.observations=runtime.observations;cell.complete&&=runtime.gaps.length===0;
+    cell.findings=runtime.findings||[];cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps,...imported.gaps);cell.diagnostics=runtime.diagnostics;cell.observations=runtime.observations;cell.complete&&=runtime.gaps.length===0;
     for(const [kind,recipes]of [['control',terminalControls],['break',terminalBreaks]])for(const recipe of recipes){
      const evidence=kind==='control'?cell.controls.some(c=>c.deferred&&c.selector===recipe.selector):data.edges.find(e=>e.screen===cell.screen&&e.engine===engine&&e.theme===cell.theme&&(e.size||e.width+'x'+e.height)===cell.size)?.checks?.some(c=>c.deferred&&c.kind===recipe.kind&&c.target===recipe.target);
      if(!evidence){cell.gaps.push('standing terminal lacks deferred evidence: '+(recipe.selector||recipe.target));cell.complete=false;continue;}

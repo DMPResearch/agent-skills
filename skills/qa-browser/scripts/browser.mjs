@@ -1,3 +1,4 @@
+import {documentOf} from './findings.mjs';
 import {pageChecks} from '../../verify-live/scripts/page-checks.mjs';
 
 export async function steps(page,items,root=page,target,runNavigation=operation=>operation(),pace) {
@@ -7,11 +8,22 @@ export async function steps(page,items,root=page,target,runNavigation=operation=
   const loc=s.role?root.getByRole(s.role,{name:s.selector,exact:true}):s.label?root.getByLabel(s.selector,{exact:true}):root.locator(s.selector||'body');
   const value=s.env?process.env[s.env]:s.value;
   if(s.env&&!value)throw Error('required secret environment value unavailable');
-  if(target&&['click','double-click','file-chooser','empty-guard','no-effect','fill','press','select','check'].includes(s.action)){
+  if(target&&['click','double-click','file-chooser','empty-guard','no-effect','handoff','fill','press','select','check'].includes(s.action)){
    const allowed=await loc.evaluate((e,target)=>[...document.querySelectorAll(target)].some(t=>t===e||t.contains(e)),target);
    if(!allowed)throw Error('break action escapes declared target');
   }
   switch(s.action){
+   case 'handoff':{
+    const own=new URL(page.url()).origin;
+    if(new URL(s.origin).origin===own)throw Error('handoff origin must be external');
+    const wait=page.waitForURL(url=>url.origin!==own,{waitUntil:'commit'});
+    try{
+     await Promise.all([wait,s.gesture==='double-click'?loc.dblclick({noWaitAfter:true}):loc.click({noWaitAfter:true})]);
+     const reached=new URL(page.url());effects.push({type:'handoff',host:reached.host,origin:reached.origin});
+     if(reached.origin!==s.origin)throw Error('handoff reached unexpected origin: '+reached.origin);
+    }finally{wait.catch(()=>{});if(new URL(page.url()).origin!==own)await page.close();}
+    return effects;
+   }
    case 'file-chooser':{const event=page.waitForEvent('filechooser');try{await loc.click();await event;effects.push({type:'file-chooser',observed:true});}catch(error){event.catch(()=>{});throw error;}break;}
    case 'no-effect':effects.push(await verifyNoEffect(page,loc,root,runNavigation));break;
    case 'empty-guard':{
@@ -120,7 +132,7 @@ export function structureChecks(){
  return [...new Set(failures)];
 }
 
-export async function inspect(page){
+export async function inspectFindings(page){
  const failures=[];
  for(const frame of page.frames())for(let attempt=0;attempt<2;attempt++){
   try{
@@ -135,17 +147,18 @@ export async function inspect(page){
    const {height,step}=await frame.evaluate(()=>({height:Math.max(document.documentElement.scrollHeight,document.body.scrollHeight),step:innerHeight*.8}));
    for(let y=0;y<height;y+=step){
     await frame.evaluate(y=>scrollTo(0,y),y);
-    failures.push(...await frame.evaluate(pageChecks),...await frame.evaluate(structureChecks));
+    failures.push(...[...await frame.evaluate(pageChecks),...await frame.evaluate(structureChecks)].map(message=>({message,document:documentOf(frame)})));
    }
    await frame.evaluate(()=>scrollTo(0,0));
    break;
   }catch(error){
    if(attempt===0&&/Execution context was destroyed/i.test(error.message))continue;
-   failures.push('frame inspection failed');break;
+   failures.push({message:'frame inspection failed',document:documentOf(frame)});break;
   }
  }
- return [...new Set(failures)];
+ return failures.filter((f,i)=>failures.findIndex(x=>x.message===f.message&&x.document.id===f.document.id)===i);
 }
+export async function inspect(page){return [...new Set((await inspectFindings(page)).map(f=>f.message))];}
 
 export async function inventory(page,declaredSelectors=[]){
  return page.locator(['button,a[href],input,textarea,select,[role=button],[role=radio],[role=switch],summary',...declaredSelectors].join(',')).evaluateAll(els=>els.filter(e=>{

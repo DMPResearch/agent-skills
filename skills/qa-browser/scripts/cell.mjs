@@ -5,7 +5,8 @@ import {redact,breakKinds} from './contract.mjs';
 import {observeRuntime,verifyIdentity} from './runtime.mjs';
 import {observeErrors} from './errors.mjs';
 import {trackNavigations} from './navigation.mjs';
-import {inspect,inventory,steps,withPrototypeChrome,NoEffectIncompleteError} from './browser.mjs';
+import {finding} from './findings.mjs';
+import {inspectFindings,inventory,steps,withPrototypeChrome,NoEffectIncompleteError} from './browser.mjs';
 
 export async function runCell(t,{config,report,out,browserModule,browsers,launches,adapter,buildObserver,sessions,terminals,pace,identities=new Map()}){
  const {flow,engine,theme,size,state}=t;
@@ -20,7 +21,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   context=await browser.newContext({viewport:{width,height},colorScheme:theme,deviceScaleFactor:1,storageState:state.id==='signed-in'?sessions?.get(engine):undefined});
   const closed=new AbortController();context.once('close',()=>closed.abort());
   if(pace){const runPace=pace;pace=key=>runPace(key,{signal:closed.signal});}
-  errors=await observeErrors(context,cell,observed);
+  errors=await observeErrors(context,cell,observed,config);
   buildObserver?.attach(context);
   cellTimer=setTimeout(()=>{cell.gaps.push('cell exceeded 60 second cap');context.close().catch(()=>{});},Math.min(config.cellTimeoutMs||60000,60000));
   context.setDefaultTimeout(Math.min(config.actionTimeoutMs||10000,10000));
@@ -37,13 +38,14 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    try{await verifyIdentity(adapter,{context,config,flow,state:state.id,engine},identities);cell.sessionVerified=true;}
    catch(error){errors.caught(error);cell.gaps.push('signed-in session identity unavailable: '+redact(error.message));return;}
   }
-  const page=await context.newPage(),surface=flow.frame?page.frameLocator(flow.frame):page;
-  runtime=observeRuntime(page,cell,{...config,observations:flow.observations},observed);
-  navigation=trackNavigations(page);
+  let page,surface;
+  const open=async()=>{page=await context.newPage();surface=flow.frame?page.frameLocator(flow.frame):page;runtime=observeRuntime(page,cell,{...config,observations:flow.observations},observed);navigation=trackNavigations(page);};
+  await open();
   const act=(items,target)=>steps(page,items,surface,target,navigation.run,pace);
   let entryBinding;
   const reset=async()=>{
    errors.phase('entry');
+   if(page.isClosed()){await runtime.audit();await open();}
    if(!await runtime.settle())throw Error('in-flight requests unresolved before replay');
    if(adapter?.reset)await adapter.reset({page,flow,state:state.id,config,pace});
    await navigation.run(()=>page.goto(new URL(flow.url,config.baseURL).href,{waitUntil:'load'}));
@@ -55,7 +57,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    entryBinding=binding;
   };
   const snap=async suffix=>withPrototypeChrome(page,config.prototypeChrome,async()=>{
-   cell.failures.push(...await inspect(page));
+   for(const item of await inspectFindings(page))finding(cell,item.message,{...config,document:item.document,phase:'inspection'});
    const path=join(out,`${id}-${suffix}.png`);await page.screenshot({path,fullPage:true,mask:config.redactSelectors?.map(s=>surface.locator(s))||[]});cell.frames.push(path);
    for(const [index,frame]of page.frames().entries()){
     if(frame!==page.mainFrame()&&!await (await frame.frameElement()).isVisible())continue;
@@ -107,7 +109,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
       const terminal=terminals.defer(t,cell,loc,'control');cell.controls.push({selector:loc.selector,status:'deferred',scope:'engine',terminal});continue;
      }
      await reset();for(const c of path)await act(c.steps);
-     try{errors.phase('control '+loc.selector);const before=observed.length,effects=await act(loc.steps),settled=await runtime.settle();await snap(`control-${cell.controls.length}`);cell.controls.push({selector:loc.selector,status:!settled?'incomplete':observed.length>before?'fail':'pass',effects,steps:loc.steps.map(s=>({action:s.action,selector:s.selector,expected:['visible','hidden','text','url','count','value'].includes(s.action)?redact(s.env?'[environment]':s.value??s.action):undefined}))});if(settled&&observed.length===before)queue.push([...path,loc]);}
+     try{errors.phase('control '+loc.selector);const before=observed.length,effects=await act(loc.steps);if(effects.some(e=>e.type==='handoff')){cell.controls.push({selector:loc.selector,status:observed.length>before?'fail':'pass',effects});continue;}const settled=await runtime.settle();await snap(`control-${cell.controls.length}`);cell.controls.push({selector:loc.selector,status:!settled?'incomplete':observed.length>before?'fail':'pass',effects,steps:loc.steps.map(s=>({action:s.action,selector:s.selector,expected:['visible','hidden','text','url','count','value'].includes(s.action)?redact(s.env?'[environment]':s.value??s.action):undefined}))});if(settled&&observed.length===before)queue.push([...path,loc]);}
      catch(error){
       errors.caught(error);
       if(error instanceof NoEffectIncompleteError){cell.gaps.push(error.message+': '+redact(loc.selector));cell.controls.push({selector:loc.selector,status:'incomplete'});}
@@ -133,16 +135,16 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   for(const {index:breakIndex,b,path,graphState,number}of breakPlans){
    if(b.notApplicable&&b.reason&&!reachedForms.size&&!reachedInputs.size&&(b.kind!=='double-submit'||!reachedControls.size)&&['empty','invalid','double-submit'].includes(b.kind))continue;
    if(!b.safe){cell.gaps.push('break safety undeclared: '+b.kind);continue;}
-   if(!['visible','hidden','text','url','count','value'].includes(b.steps?.at(-1)?.action)){cell.gaps.push('break has no expected outcome: '+b.kind);continue;}
+   if(!['visible','hidden','text','url','count','value','handoff'].includes(b.steps?.at(-1)?.action)){cell.gaps.push('break has no expected outcome: '+b.kind);continue;}
    const actions=b.steps.map(s=>s.action);
-   const validAction=b.kind==='empty'?b.steps.some(s=>s.action==='fill'&&s.value===''):b.kind==='invalid'?b.steps.some(s=>s.action==='fill'&&(s.env||s.value)):b.kind==='double-submit'?actions.includes('double-click'):b.kind==='refresh'?actions.includes('reload'):b.kind==='back-forward'?actions.includes('back')&&actions.includes('forward'):true;
+   const validAction=b.kind==='empty'?b.steps.some(s=>s.action==='fill'&&s.value===''):b.kind==='invalid'?b.steps.some(s=>s.action==='fill'&&(s.env||s.value)):b.kind==='double-submit'?(actions.includes('double-click')||b.steps.some(s=>s.action==='handoff'&&s.gesture==='double-click')):b.kind==='refresh'?actions.includes('reload'):b.kind==='back-forward'?actions.includes('back')&&actions.includes('forward'):true;
    if(!validAction){cell.gaps.push('break does not exercise '+b.kind);continue;}
    if(['signed-out','signed-in'].includes(b.kind)&&state.id!==b.kind)continue;
    if(b.terminal){
     if(!terminals){cell.gaps.push('terminal phase unavailable: '+b.kind);continue;}
     const terminal=terminals.defer(t,cell,b,'break');cell.controls.push({break:b.kind,target:b.target,index:breakIndex,graphState,status:'deferred',scope:'engine',terminal});continue;
    }
-   try{await reset();for(const control of path)await act(control.steps);if(b.coverageTarget){const current=await inventory(surface);const matched=await Promise.all(current.map(async item=>(await matchingBreaks(surface,item,[b],state.id)).length));if(!matched.some(Boolean))throw Error('break alias no longer binds its reached input');}if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});errors.phase('break '+b.kind+' '+breakIndex);await act(b.steps,b.target);const settled=await runtime.settle();await snap('break-'+b.kind+'-'+breakIndex+'-state'+number+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:settled?'pass':'incomplete'});}
+   try{await reset();for(const control of path)await act(control.steps);if(b.coverageTarget){const current=await inventory(surface);const matched=await Promise.all(current.map(async item=>(await matchingBreaks(surface,item,[b],state.id)).length));if(!matched.some(Boolean))throw Error('break alias no longer binds its reached input');}if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});errors.phase('break '+b.kind+' '+breakIndex);const effects=await act(b.steps,b.target);if(effects.some(e=>e.type==='handoff')){cell.controls.push({break:b.kind,target:b.target,index:breakIndex,graphState,status:'pass',effects});continue;}const settled=await runtime.settle();await snap('break-'+b.kind+'-'+breakIndex+'-state'+number+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:settled?'pass':'incomplete'});}
    catch(error){errors.caught(error);cell.failures.push('break failed: '+b.kind+' on '+redact(b.target)+'; '+redact(error.message));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:'fail'});cell.repro.push('Run '+b.kind+' on '+redact(b.target),...b.steps.map(s=>redact(s.action+' '+(s.selector||'page')+' '+(s.env?'[environment]':s.value??''))));}
   }
   for(const entry of cell.controls.filter(c=>c.status==='break-contract-pending'))entry.status=cell.controls.some(c=>c.graphState===entry.graphState&&entry.breakIndices.includes(c.index)&&['pass','fail','shared'].includes(c.status))?'covered-by-break-contract':'incomplete';

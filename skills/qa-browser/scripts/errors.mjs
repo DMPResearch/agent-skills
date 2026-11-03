@@ -1,9 +1,10 @@
+import {finding} from './findings.mjs';
 import {randomUUID} from 'node:crypto';
 import {redact} from './contract.mjs';
 import {trackNavigations} from './navigation.mjs';
 
 // Read-only listeners retain the emitting document before navigation can replace it.
-export async function observeErrors(context,cell,failures=cell.failures){
+export async function observeErrors(context,cell,failures=cell.failures,config={}){
  cell.diagnostics||=[];
  let phase='context',lastPage,frameNumber=0;
  const frames=new WeakMap(),documents=new WeakMap(),recent=[],fallbacks=new Set();
@@ -26,7 +27,7 @@ export async function observeErrors(context,cell,failures=cell.failures){
   const timer=setTimeout(()=>{
    fallbacks.delete(timer);
    if(recent.some(r=>r.page===page&&r.message===message&&Date.now()-r.time<250))return;
-   const detail=append(error,where,'pageerror',during);failures.push('uncaught page error: '+detail.message);
+   const detail=append(error,where,'pageerror',during);finding(cell,'uncaught page error: '+detail.message,{...config,document:detail.document,phase:detail.phase,kind:'pageerror',target:failures});
   },50);fallbacks.add(timer);
  };
  context.on('page',page=>{lastPage=page;trackNavigations(page);});
@@ -36,7 +37,7 @@ export async function observeErrors(context,cell,failures=cell.failures){
   const doc={id:frameId(frame)+':'+error.documentId,url:redact(error.url),origin:redact(error.origin)};documents.set(frame,doc);
   if(error.kind==='document')return;
   recent.push({page,message:error.message,time:Date.now()});if(recent.length>100)recent.shift();
-  const detail=append(error,location(page,frame,doc));failures.push('uncaught page error: '+detail.message);
+  const detail=append(error,location(page,frame,doc));finding(cell,'uncaught page error: '+detail.message,{...config,document:detail.document,phase:detail.phase,kind:'pageerror',target:failures});
  });
  await context.addInitScript(({binding})=>{
   const documentId=Math.random().toString(36).slice(2);

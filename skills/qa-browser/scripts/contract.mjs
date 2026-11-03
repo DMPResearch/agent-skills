@@ -21,13 +21,14 @@ export function validate(c) {
   if(f.states.some(s=>typeof s!=='string'&&(!s.id||!Array.isArray(s.setup))))throw Error('invalid auth/data state');
   for(const item of [...f.controls,...f.breaks])if(item.terminal!==undefined&&typeof item.terminal!=='boolean')throw Error('terminal must be boolean; it declares once-per-route/engine coverage');
   for(const b of f.breaks)if(b.coverageTarget!==undefined&&(typeof b.coverageTarget!=='string'||!b.coverageTarget||!b.target))throw Error('break coverageTarget needs an observed input name and CSS target');
-  for(const control of f.controls)if(!control.selector||!Array.isArray(control.steps)||!['visible','hidden','text','url','count','value','file-chooser','empty-guard','no-effect'].includes(control.steps.at(-1)?.action))throw Error('control requires selector and expected effect steps');
+  for(const control of f.controls)if(!control.selector||!Array.isArray(control.steps)||!['visible','hidden','text','url','count','value','file-chooser','empty-guard','no-effect','handoff'].includes(control.steps.at(-1)?.action))throw Error('control requires selector and expected effect steps');
   for(const control of f.controls)for(const [index,step]of control.steps.entries())if(step.action==='no-effect'&&(index!==control.steps.length-1||step.selector!==control.selector||step.role||step.label))throw Error('no-effect must be the final control step and use its exact CSS selector');
   const outsideControls=[...f.steps,...f.breaks.flatMap(x=>x.steps||[]),...f.states.flatMap(x=>typeof x==='string'?[]:x.setup)];
   if(outsideControls.some(step=>step.action==='no-effect'))throw Error('no-effect is allowed only as the final control step');
   for(const step of [...f.steps,...f.controls.flatMap(x=>x.steps),...f.breaks.flatMap(x=>x.steps||[])]){
+   if(step.action==='handoff'){let u;try{u=new URL(step.origin);}catch{}if(!u||!['http:','https:'].includes(u.protocol)||u.origin!==step.origin||u.origin===new URL(c.baseURL||c.start.url).origin||step.env||step.gesture!==undefined&&!['click','double-click'].includes(step.gesture))throw Error('handoff needs an exact external HTTP(S) origin and click or double-click gesture');}
    if(step.service&&(typeof step.service!=='string'||!Number.isInteger(c.serviceIntervals?.[step.service])||c.serviceIntervals[step.service]<1))throw Error('serviceIntervals.'+step.service+' must supply a positive millisecond interval');
-   if(!['click','double-click','file-chooser','empty-guard','no-effect','fill','press','select','check','reload','back','forward','visible','hidden','text','url','count','value'].includes(step.action))throw Error('unknown step action');
+   if(!['click','double-click','file-chooser','empty-guard','no-effect','handoff','fill','press','select','check','reload','back','forward','visible','hidden','text','url','count','value'].includes(step.action))throw Error('unknown step action');
    if(!['reload','back','forward','url'].includes(step.action)&&!step.selector)throw Error('step selector required');
    if(['fill','select','press','text','url','value','count'].includes(step.action)&&step.value===undefined&&!step.env)throw Error('step value required');
   }

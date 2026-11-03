@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {join} from 'node:path';
-import {steps,inspect} from './browser.mjs';
+import {finding} from './findings.mjs';
+import {steps,inspectFindings} from './browser.mjs';
 import {trackNavigations} from './navigation.mjs';
 import {observeRuntime,verifyIdentity} from './runtime.mjs';
 import {observeErrors} from './errors.mjs';
@@ -36,7 +37,7 @@ export async function prepareEngines(tasks,env){
   try{
    if(!launches.has(engine))launches.set(engine,browserModule[engine].launch().then(b=>{browsers.set(engine,b);return b;}));
    const browser=await launches.get(engine);context=await browser.newContext();context.setDefaultTimeout(10000);
-   errors=await observeErrors(context,runtime);errors.phase('shared-entry');
+   errors=await observeErrors(context,runtime,runtime.failures,config);errors.phase('shared-entry');
    const closed=new AbortController();context.once('close',()=>closed.abort());const entryPace=key=>env.pace(key,{signal:closed.signal});
    await Promise.race([
     adapter.prepareEngine({context,engine,config,pace:entryPace}),
@@ -76,7 +77,7 @@ export function terminalQueue(){
      isolated=Boolean(adapter?.prepareTerminal);if(isolated&&!adapter.cleanupTerminal)throw Error('prepareTerminal requires cleanupTerminal for its isolated real session');
      record.isolation=isolated?'adapter-session':'shared-entry';
      context=await browsers.get(engine).newContext({viewport:{width,height},colorScheme:theme,storageState:!isolated&&state.id==='signed-in'?sessions.get(engine):undefined});context.setDefaultTimeout(10000);
-     errors=await observeErrors(context,runtime);errors.phase('terminal-entry');
+     errors=await observeErrors(context,runtime,runtime.failures,config);errors.phase('terminal-entry');
      const closed=new AbortController();context.once('close',()=>closed.abort());terminalPace=key=>env.pace(key,{signal:closed.signal});
      timer=setTimeout(()=>context.close().catch(()=>{}),60000);
      if(config.themeInit)await context.addInitScript(config.themeInit.replaceAll('THEME',JSON.stringify(theme)));
@@ -92,16 +93,19 @@ export function terminalQueue(){
      if(!await observer.settle())throw Error('in-flight entry requests unresolved before terminal action');
      await root.locator(recipe.selector||recipe.target).waitFor({state:'attached'});
      entered=true;errors.phase('terminal-action');
-     await steps(page,recipe.steps,root,kind==='break'?recipe.target:undefined,navigation.run,terminalPace);
+     const effects=await steps(page,recipe.steps,root,kind==='break'?recipe.target:undefined,navigation.run,terminalPace);
+     if(effects.some(e=>e.type==='handoff')){record.handoff=effects.find(e=>e.type==='handoff');record.status=runtime.failures.length?'fail':'pass';}
+     else{
      const settled=await observer.settle();
-     const failures=await inspect(page);if(failures.length)throw Error(failures.join('; '));
+     for(const item of await inspectFindings(page))finding(runtime,item.message,{...config,document:item.document,phase:'terminal-inspection'});if(runtime.failures.length)throw Error(runtime.failures.join('; '));
      const path=join(out,'terminal-'+id+'.png');await page.screenshot({path,fullPage:true,mask:config.redactSelectors?.map(s=>root.locator(s))||[]});cells[0].frames.push(path);record.frame=path;
      await observer.audit();
      record.status=runtime.failures.length?'fail':settled&&!runtime.gaps.length?'pass':'incomplete';
+     }
     }catch(error){errors?.caught(error);record.error=redact(error.message);if(entered){record.status='fail';for(const cell of cells)cell.failures.push('shared terminal expected effect failed: '+record.target+'; '+record.error);}else report.gaps.push('shared terminal check unavailable: '+id+'; '+record.error);}
     finally{if(observer){await observer.settle();await observer.audit();}await errors?.finish();if(isolated&&context)try{await adapter.cleanupTerminal({context,config,flow,state:state.id,engine,recipe,kind,pace:terminalPace});}catch(error){record.status='incomplete';runtime.gaps.push('isolated terminal cleanup failed: '+redact(error.message));}clearTimeout(timer);if(context)await context.close().catch(()=>{});if(runtime.failures.length)record.status='fail';else if(runtime.gaps.length)record.status='incomplete';}
     for(const cell of cells){
-     cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps);cell.diagnostics||=[];cell.diagnostics.push(...runtime.diagnostics);cell.observations||=[];cell.observations.push(...runtime.observations||[]);
+     cell.findings||=[];cell.findings.push(...runtime.findings||[]);cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps);cell.diagnostics||=[];cell.diagnostics.push(...runtime.diagnostics);cell.observations||=[];cell.observations.push(...runtime.observations||[]);
      if(['pass','fail'].includes(record.status))cell.gaps=cell.gaps.filter(g=>g!=='terminal check pending: '+id);
      for(const entry of cell.controls.filter(c=>c.terminal===id))entry.status=record.status==='pass'?'shared':record.status;
      cell.complete=cell.gaps.length===0;cell.functional=cell.failures.length?'fail':cell.complete?'pass':'incomplete';
