@@ -117,3 +117,11 @@ fingerprint never claims production-build validation. Run the CLI to create each
 proof report; do not hand-assemble head, build or visual verdicts afterward.
 A PR with only known non-UI changes exits 0 with `not-applicable`, no browser run;
 capture-only still exits 2 with `incomplete`.
+
+Use the explicit `handoff` action for an expected external-origin transition;
+provider account pages are outside the app's crawl and screenshot judgment.
+Known foreign findings stay informational with document/origin provenance;
+unknown provenance never grants an exemption. Probe page-error receipts require
+passive same-page failed-request correlation within the contract's 1,000 ms
+window. No fetch instrumentation is installed. Split auth flows may declare
+`authCounterparts`; only executed matching-matrix auth proof satisfies them.

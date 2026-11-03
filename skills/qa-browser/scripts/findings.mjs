@@ -9,9 +9,23 @@ export function documentOf(frame){
 }
 export function finding(cell,message,{baseURL,document={id:'unknown',url:'unknown',origin:'unknown'},resourceURL,kind='check',phase='unknown',severity='failure',target}={}){
  let base,resourceOrigin;try{base=new URL(baseURL).origin;}catch{}try{resourceOrigin=new URL(resourceURL).origin;}catch{}
- const origin=document.origin||'unknown',foreign=Boolean(base&&origin!=='unknown'&&origin!=='null'&&origin!==base&&resourceOrigin!==base);
- const row={kind,message:redact(message),phase,document,origin,resourceURL:resourceURL?redact(resourceURL):undefined,scope:foreign?'third-party':base&&origin===base?'app':'unknown',severity,affectsVerdict:!foreign};
+ let origin=document.origin||'unknown';try{origin=new URL(origin).origin;}catch{}document={...document,origin};
+ const foreign=Boolean(base&&origin!=='unknown'&&origin!=='null'&&origin!==base&&resourceOrigin!==base);
+ const row={kind,message:redact(message),phase,document,origin,resourceURL:resourceURL?redact(resourceURL):undefined,resourceOrigin,scope:foreign?'third-party':base&&(origin===base||resourceOrigin===base)?'app':'unknown',severity,affectsVerdict:!foreign};
  cell.findings||=[];cell.findings.push(row);
  if(!foreign)(target|| (severity==='gap'?cell.gaps:cell.failures)).push(row.message);
  return row;
+}
+
+export function completeFindings(report){
+ for(const cell of report.cells){
+  cell.findings||=[];
+  for(const [severity,messages]of [['failure',[...cell.failures,...cell.visualFailures||[]]],['gap',cell.gaps]])for(const message of messages){
+   if(cell.findings.some(f=>f.message===message))continue;
+   const detail=cell.diagnostics?.find(d=>d.message&&message.includes(d.message));
+   const document=detail?.document||(cell.visualFailures?.includes(message)?cell.frameDocuments?.[cell.entryFrame]:undefined);
+   finding(cell,message,{document,phase:detail?.phase||'unattributed',severity,target:[]});
+  }
+ }
+ report.foreignFindings=report.cells.flatMap(c=>c.findings.filter(f=>f.scope==='third-party').map(f=>({...f,screen:c.screen,cell:c.id})));
 }

@@ -59,7 +59,7 @@ function pathMatches(path,rule){
 export function requestObservation(classes,baseURL,request,outcome){
  if(!classes.length)return;
  const url=new URL(request.url());if(url.origin===new URL(baseURL).origin)return;
- const matches=classes.filter(c=>c.kind==='external-request'&&externalBoundary(c,new URL(baseURL),url,Boolean(c.match.origin))&&c.outcomes.includes(outcome)&&c.match.methods.includes(request.method())&&c.match.resourceTypes.includes(request.resourceType())&&
+ const matches=classes.filter(c=>c.kind==='external-request'&&externalBoundary(c,new URL(baseURL),url,Boolean(c.match.origin))&&(outcome===undefined||c.outcomes.includes(outcome))&&c.match.methods.includes(request.method())&&c.match.resourceTypes.includes(request.resourceType())&&
   (c.match.origin?url.origin===c.match.origin:url.protocol==='https:'&&url.hostname.endsWith(c.match.hostnameSuffix))&&pathMatches(url.pathname,c.match.path));
  return matches.length===1?matches[0]:undefined;
 }

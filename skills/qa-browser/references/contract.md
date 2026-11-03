@@ -497,3 +497,59 @@ results. First-party scripts, stylesheets and fonts are checked against
 matched. Changed bytes fail; an undeclared asset or unavailable body remains a
 gap. Native, standing and terminal paths use the same response enforcement and
 the existing bounded read/retry policy.
+
+### External handoffs and finding ownership
+
+End an external control or break with
+`{action:"handoff",selector:"#continue",origin:"https://identity.example.org"}`.
+`gesture:"double-click"` explicitly exercises a double-submit handoff. The
+origin must be an exact HTTP(S) origin different from the app's origin. A
+committed main-frame transition must reach it; no transition or another origin
+fails. The runner records the reached host, verifies page closure within the
+existing action bound, and neither captures, inspects nor traverses that foreign
+page. The next edge uses a fresh app page. Terminal handoffs use the same action.
+Same-origin navigation retains its normal assertions and traversal.
+
+Cells retain `findings` with message, kind, phase, document identity, URL,
+origin, scope and `affectsVerdict`; captured paths also have `frameDocuments`.
+Known third-party document findings remain visible in `foreignFindings` and
+Markdown without failing the app. First-party resource failures always remain
+failures, including requests initiated by a foreign frame. Console attribution
+uses an unambiguous document URL; otherwise it stays unknown. Legacy provider
+findings without provenance are explicitly unknown and remain actionable.
+Coverage checks without a retained document are also unknown, never guessed.
+
+### Passive probe-error receipts
+
+An existing external-request class may receive a `page-error` receipt only when
+its exact URL appears in the error message, the class uniquely matches that URL,
+method and resource type, and Playwright observed one failed request to that same
+URL in the same page within **1,000 ms** of the error. Matching occurs before
+redaction. The observer allows up to 100 ms for a request-failure event to arrive;
+its timestamps must still meet the 1,000 ms window. Multiple matching requests,
+classes, own-origin URLs or script-stack frames naming our origin refuse the
+receipt. Observed HTTP error responses remain failures. Worker-bearing pages
+are conservatively not correlated because page ownership of their errors can
+be ambiguous. Native messages without a full URL remain failures. Unmatched
+console errors remain failures even when a page-error receipt exists.
+
+A deliberately forged error naming the probe URL while a real matching probe
+fails at the same moment can receive a receipt; this requires code already
+running on the page.
+
+This is passive Playwright observation: no fetch/XHR replacement or request
+modification. Receipts retain class, owner, reason, redacted URL, error message,
+document and request/error timestamps. Transport failure classification waits
+at most 200 ms for the corresponding page-error decision; an uncorrelated
+failure stays a failure.
+
+### Explicit counterpart auth coverage
+
+A flow may declare `authCounterparts:{"signed-in":"account"}` when that state
+belongs to another flow. Validation requires the target's declared auth state
+and a real auth assertion. Coverage remains pending until the target actually
+executes at the same engine, theme and viewport, with a passing auth break,
+verified signed-in identity where applicable, no functional failure and no
+independent coverage gap. Missing, failed, skipped or differently sized cells
+cannot satisfy it. The report retains the exact counterpart cell receipt.
+Each flow's own state and control/break coverage requirements remain unchanged.
