@@ -370,3 +370,23 @@ every receipt against current identities and exact image bytes before using
 it. Unfinished work keeps no verdict. `review.attempts` may be 1 or 2 (default
 2); a bounded experiment may explicitly disable retries. Capacity failures
 stop without retry or model substitution.
+
+### Declared external observations
+
+A flow may supply `observations`, at most eight classes with unique `id`, `owner`
+and `reason`. These are visible receipts, never a general ignore list. An
+`external-request` class declares `match` with either an exact external `origin`
+or a label-bound `hostnameSuffix` and `scheme:"https"`; exact `path`, `methods`
+from GET/HEAD/OPTIONS and `resourceTypes` from fetch/xhr; and `outcomes` from
+pending/cancelled only. A variable path segment uses
+`{prefix:"/probes/",suffix:"/result",maxSegmentLength:64}`; only one bounded
+alphanumeric, underscore or hyphen segment is accepted. Same-origin matches are
+refused both at validation and observation. HTTP errors, unexpected transport
+failures and control assertions remain failures. Ambiguous matches are not exempt.
+
+A separate `expected-development-warning` class needs
+`serviceEnvironment:"development"`, an exact external
+`source:{origin,paths:["/client.js"]}` and exact `message`. Same-origin or different
+warnings remain visible checks. Every matching receipt retains the class, owner,
+reason, URL and observed outcome in JSON and Markdown reports. Consumers declare
+their service classes as flow data; no provider-specific rules live in the tool.

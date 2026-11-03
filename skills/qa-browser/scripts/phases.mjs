@@ -67,7 +67,7 @@ export function terminalQueue(){
      await adapter?.authenticate?.({context,state:state.id,config,flow,pace:env.pace});
      if(state.id==='signed-in')await verifyIdentity(adapter,{context,config,flow,state:state.id,engine},env.identities);
      const page=await context.newPage(),root=flow.frame?page.frameLocator(flow.frame):page,navigation=trackNavigations(page);
-     observer=observeRuntime(page,runtime,config);
+     observer=observeRuntime(page,runtime,{...config,observations:flow.observations});
      await adapter?.reset?.({page,flow,state:state.id,config,pace:env.pace});
      await navigation.run(()=>page.goto(new URL(flow.url,config.baseURL).href,{waitUntil:'load'}));
      await adapter?.enter?.({page,flow,state:state.id,pace:env.pace});
@@ -79,12 +79,12 @@ export function terminalQueue(){
      const settled=await observer.settle();
      const failures=await inspect(page);if(failures.length)throw Error(failures.join('; '));
      const path=join(out,'terminal-'+id+'.png');await page.screenshot({path,fullPage:true,mask:config.redactSelectors?.map(s=>root.locator(s))||[]});cells[0].frames.push(path);record.frame=path;
-     const gaps=navigation.unclassified();if(gaps.length)throw Error('unclassified cancelled request: '+redact(gaps[0].url()));
+     const gaps=navigation.unclassified().filter(r=>!observer.expectedCancellation(r));if(gaps.length)throw Error('unclassified cancelled request: '+redact(gaps[0].url()));
      record.status=runtime.failures.length?'fail':settled&&!runtime.gaps.length?'pass':'incomplete';
     }catch(error){record.error=redact(error.message);if(entered){record.status='fail';for(const cell of cells)cell.failures.push('shared terminal expected effect failed: '+record.target+'; '+record.error);}else report.gaps.push('shared terminal check unavailable: '+id+'; '+record.error);}
     finally{if(observer)await observer.settle();clearTimeout(timer);if(context)await context.close().catch(()=>{});if(runtime.failures.length)record.status='fail';else if(runtime.gaps.length)record.status='incomplete';}
     for(const cell of cells){
-     cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps);cell.diagnostics||=[];cell.diagnostics.push(...runtime.diagnostics);
+     cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps);cell.diagnostics||=[];cell.diagnostics.push(...runtime.diagnostics);cell.observations||=[];cell.observations.push(...runtime.observations||[]);
      if(['pass','fail'].includes(record.status))cell.gaps=cell.gaps.filter(g=>g!=='terminal check pending: '+id);
      for(const entry of cell.controls.filter(c=>c.terminal===id))entry.status=record.status==='pass'?'shared':record.status;
      cell.complete=cell.gaps.length===0;

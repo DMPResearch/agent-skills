@@ -34,7 +34,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
    catch(error){cell.gaps.push('signed-in session identity unavailable: '+redact(error.message));return;}
   }
   const page=await context.newPage(),surface=flow.frame?page.frameLocator(flow.frame):page;
-  runtime=observeRuntime(page,cell,config,observed);
+  runtime=observeRuntime(page,cell,{...config,observations:flow.observations},observed);
   navigation=trackNavigations(page);
   const act=(items,target)=>steps(page,items,surface,target,navigation.run,pace);
   page.on('response',r=>{
@@ -158,7 +158,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
  }catch{cell.gaps.push('cell failed to complete navigation or checks');}
  finally{
   if(runtime)await runtime.settle();
-  if(navigation)cell.gaps.push(...navigation.unclassified().map(r=>'unclassified cancelled request: '+redact(r.url())));
+  if(navigation)cell.gaps.push(...navigation.unclassified().filter(r=>!runtime?.expectedCancellation(r)).map(r=>'unclassified cancelled request: '+redact(r.url())));
   cell.gaps=[...new Set(cell.gaps)];if(cell.gaps.length)cell.complete=false;
   cell.failures=[...new Set([...cell.failures,...observed])];clearTimeout(cellTimer);
   await buildObserver?.finish();if(context)await context.close().catch(()=>{});
