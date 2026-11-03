@@ -18,10 +18,6 @@ export function observeRuntime(page,cell,config={},failures=cell.failures){
   const source=message.location(),target=message.type()==='warning'?cell.gaps:failures;
   target.push('console '+message.type()+' at '+redact(source.url||'[inline]')+':'+source.lineNumber+'; '+redact(message.text()));
  });
- page.on('pageerror',error=>{
-  const detail={kind:'pageerror',message:redact(error.message),stack:redact(error.stack||''),flow:cell.screen,state:cell.state,engine:cell.engine,viewport:cell.size};
-  cell.diagnostics.push(detail);failures.push('uncaught page error: '+detail.message);
- });
  page.on('response',response=>{if(response.status()>=400)failures.push(`HTTP ${response.status()}: ${redact(response.url())}`);});
  page.on('requestfailed',request=>{pending.delete(request);const error=request.failure()?.errorText||'';if(!/ABORTED|cancelled|canceled/i.test(error))failures.push('request failed: '+redact(request.url())+'; '+redact(error));});
  page.on('requestfinished',request=>{pending.delete(request);if(request.timing().responseEnd>Number(config.slowRequestMs||5000))failures.push('slow request: '+redact(request.url()));});

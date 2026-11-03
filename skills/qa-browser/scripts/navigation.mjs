@@ -35,6 +35,7 @@ export function trackNavigations(page){
   if(/ABORTED|cancelled|canceled/i.test(r.failure()?.errorText||''))cancelled.push(r);
  });
  const tracker={
+  identity:frame=>({generation:generations.get(frame)||0,url:frame.url()}),
   bodyReplacementPending(request){
    const frame=resources.get(request)?.frame;
    return scopes.some(scope=>[...scope.requests].some(r=>r!==request&&!committed.has(r)&&r.frame()===frame));

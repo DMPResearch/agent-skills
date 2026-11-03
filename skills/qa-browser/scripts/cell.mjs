@@ -3,6 +3,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {redact,breakKinds} from './contract.mjs';
 import {observeRuntime,verifyIdentity} from './runtime.mjs';
+import {observeErrors} from './errors.mjs';
 import {readBody} from './body.mjs';
 import {trackNavigations} from './navigation.mjs';
 import {inspect,inventory,steps,withPrototypeChrome,NoEffectIncompleteError} from './browser.mjs';
@@ -11,7 +12,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
  const {flow,engine,theme,size,state}=t;
  const id=`${flow.id}-${state.id}-${engine}-${theme}-${size}`.replace(/[^a-z0-9.-]/gi,'_');
  const cell={id,screen:flow.id,state:state.id,engine,theme,size,complete:false,frames:[],failures:[],gaps:[],controls:[],repro:[`Open ${redact(new URL(flow.url,config.baseURL))}`,`Use ${engine}, ${size}, ${theme}, state ${state.id}`]};report.cells.push(cell);
- let context,cellTimer,navigation,runtime;const observed=[],assetChecks=[];
+ let context,cellTimer,navigation,runtime,errors;const observed=[],assetChecks=[];
  try{
   if(report.blockedAuthStates?.includes(state.id)||state.id==='signed-in'&&report.blockedAuthEngines?.includes(engine)){cell.gaps.push('authentication unavailable; cell not attempted');return;}
   if(!launches.has(engine))launches.set(engine,browserModule[engine].launch().then(b=>{browsers.set(engine,b);return b;}));
@@ -20,18 +21,22 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   context=await browser.newContext({viewport:{width,height},colorScheme:theme,deviceScaleFactor:1,storageState:state.id==='signed-in'?sessions?.get(engine):undefined});
   const closed=new AbortController();context.once('close',()=>closed.abort());
   if(pace){const runPace=pace;pace=key=>runPace(key,{signal:closed.signal});}
+  errors=await observeErrors(context,cell,observed);
   buildObserver?.attach(context);
   cellTimer=setTimeout(()=>{cell.gaps.push('cell exceeded 60 second cap');context.close().catch(()=>{});},Math.min(config.cellTimeoutMs||60000,60000));
   context.setDefaultTimeout(Math.min(config.actionTimeoutMs||10000,10000));
+  errors.phase('theme-init');
   if(config.themeInit)await context.addInitScript(config.themeInit.replaceAll('THEME',JSON.stringify(theme)));
   if(state.id==='signed-in'&&!adapter?.authenticate&&!sessions?.has(engine))cell.gaps.push('signed-in state requires real authentication adapter');
+  errors.phase('authentication');
   if(adapter?.authenticate){
    try{await adapter.authenticate({context,state:state.id,config,flow,pace});}
-   catch{report.blockedAuthStates||=[];report.blockedAuthStates.push(state.id);cell.gaps.push('real authentication failed; later cells in this state blocked');return;}
+   catch(error){errors.caught(error);report.blockedAuthStates||=[];report.blockedAuthStates.push(state.id);cell.gaps.push('real authentication failed: '+redact(error.message)+'; later cells in this state blocked');return;}
   }
+  errors.phase('session-verification');
   if(state.id==='signed-in'){
    try{await verifyIdentity(adapter,{context,config,flow,state:state.id,engine},identities);cell.sessionVerified=true;}
-   catch(error){cell.gaps.push('signed-in session identity unavailable: '+redact(error.message));return;}
+   catch(error){errors.caught(error);cell.gaps.push('signed-in session identity unavailable: '+redact(error.message));return;}
   }
   const page=await context.newPage(),surface=flow.frame?page.frameLocator(flow.frame):page;
   runtime=observeRuntime(page,cell,{...config,observations:flow.observations},observed);
@@ -50,6 +55,7 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
   });
   let entryBinding;
   const reset=async()=>{
+   errors.phase('entry');
    if(!await runtime.settle())throw Error('in-flight requests unresolved before replay');
    if(adapter?.reset)await adapter.reset({page,flow,state:state.id,config,pace});
    await navigation.run(()=>page.goto(new URL(flow.url,config.baseURL).href,{waitUntil:'load'}));
@@ -113,10 +119,11 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
       const terminal=terminals.defer(t,cell,loc,'control');cell.controls.push({selector:loc.selector,status:'deferred',scope:'engine',terminal});continue;
      }
      await reset();for(const c of path)await act(c.steps);
-     try{const before=observed.length,effects=await act(loc.steps),settled=await runtime.settle();await snap(`control-${cell.controls.length}`);cell.controls.push({selector:loc.selector,status:!settled?'incomplete':observed.length>before?'fail':'pass',effects,steps:loc.steps.map(s=>({action:s.action,selector:s.selector,expected:['visible','hidden','text','url','count','value'].includes(s.action)?redact(s.env?'[environment]':s.value??s.action):undefined}))});if(settled&&observed.length===before)queue.push([...path,loc]);}
+     try{errors.phase('control '+loc.selector);const before=observed.length,effects=await act(loc.steps),settled=await runtime.settle();await snap(`control-${cell.controls.length}`);cell.controls.push({selector:loc.selector,status:!settled?'incomplete':observed.length>before?'fail':'pass',effects,steps:loc.steps.map(s=>({action:s.action,selector:s.selector,expected:['visible','hidden','text','url','count','value'].includes(s.action)?redact(s.env?'[environment]':s.value??s.action):undefined}))});if(settled&&observed.length===before)queue.push([...path,loc]);}
      catch(error){
+      errors.caught(error);
       if(error instanceof NoEffectIncompleteError){cell.gaps.push(error.message+': '+redact(loc.selector));cell.controls.push({selector:loc.selector,status:'incomplete'});}
-      else{cell.failures.push('control expected effect failed: '+redact(loc.selector));cell.controls.push({selector:loc.selector,status:'fail'});}
+      else{cell.failures.push('control expected effect failed: '+redact(loc.selector)+'; '+redact(error.message));cell.controls.push({selector:loc.selector,status:'fail'});}
      }
     }else if(item.tag==='a'&&item.href){
      const url=new URL(item.href,page.url());
@@ -147,17 +154,18 @@ export async function runCell(t,{config,report,out,browserModule,browsers,launch
     if(!terminals){cell.gaps.push('terminal phase unavailable: '+b.kind);continue;}
     const terminal=terminals.defer(t,cell,b,'break');cell.controls.push({break:b.kind,target:b.target,index:breakIndex,graphState,status:'deferred',scope:'engine',terminal});continue;
    }
-   try{await reset();for(const control of path)await act(control.steps);if(b.coverageTarget){const current=await inventory(surface);const matched=await Promise.all(current.map(async item=>(await matchingBreaks(surface,item,[b],state.id)).length));if(!matched.some(Boolean))throw Error('break alias no longer binds its reached input');}if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});await act(b.steps,b.target);const settled=await runtime.settle();await snap('break-'+b.kind+'-'+breakIndex+'-state'+number+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:settled?'pass':'incomplete'});}
-   catch{cell.failures.push('break failed: '+b.kind+' on '+redact(b.target));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:'fail'});cell.repro.push('Run '+b.kind+' on '+redact(b.target),...b.steps.map(s=>redact(s.action+' '+(s.selector||'page')+' '+(s.env?'[environment]':s.value??''))));}
+   try{await reset();for(const control of path)await act(control.steps);if(b.coverageTarget){const current=await inventory(surface);const matched=await Promise.all(current.map(async item=>(await matchingBreaks(surface,item,[b],state.id)).length));if(!matched.some(Boolean))throw Error('break alias no longer binds its reached input');}if(!b.target)throw Error('break target required');await surface.locator(b.target).waitFor({state:'attached'});errors.phase('break '+b.kind+' '+breakIndex);await act(b.steps,b.target);const settled=await runtime.settle();await snap('break-'+b.kind+'-'+breakIndex+'-state'+number+'-'+createHash('sha256').update(b.target).digest('hex').slice(0,10));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:settled?'pass':'incomplete'});}
+   catch(error){errors.caught(error);cell.failures.push('break failed: '+b.kind+' on '+redact(b.target)+'; '+redact(error.message));cell.controls.push({break:b.kind,target:b.target,coverageTarget:b.coverageTarget||b.target,index:breakIndex,graphState,statePath:path.map(c=>c.selector),status:'fail'});cell.repro.push('Run '+b.kind+' on '+redact(b.target),...b.steps.map(s=>redact(s.action+' '+(s.selector||'page')+' '+(s.env?'[environment]':s.value??''))));}
   }
   for(const entry of cell.controls.filter(c=>c.status==='break-contract-pending'))entry.status=cell.controls.some(c=>c.graphState===entry.graphState&&entry.breakIndices.includes(c.index)&&['pass','fail','shared'].includes(c.status))?'covered-by-break-contract':'incomplete';
   await runtime.settle();
   await Promise.all(assetChecks);
   cell.failures=[...new Set(cell.failures)];cell.gaps=[...new Set(cell.gaps)];
   cell.complete=cell.gaps.length===0;
- }catch{cell.gaps.push('cell failed to complete navigation or checks');}
+ }catch(error){const detail=errors?.caught(error);cell.gaps.push('cell failed during '+(detail?.phase||'context')+': '+redact(error.message));}
  finally{
   if(runtime)await runtime.settle();
+  await errors?.finish();
   if(navigation)cell.gaps.push(...navigation.unclassified().filter(r=>!runtime?.expectedCancellation(r)).map(r=>'unclassified cancelled request: '+redact(r.url())));
   cell.gaps=[...new Set(cell.gaps)];if(cell.gaps.length)cell.complete=false;
   cell.failures=[...new Set([...cell.failures,...observed])];clearTimeout(cellTimer);

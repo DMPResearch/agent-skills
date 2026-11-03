@@ -390,3 +390,14 @@ A separate `expected-development-warning` class needs
 warnings remain visible checks. Every matching receipt retains the class, owner,
 reason, URL and observed outcome in JSON and Markdown reports. Consumers declare
 their service classes as flow data; no provider-specific rules live in the tool.
+
+### Runtime error provenance
+
+Read-only error and rejection listeners are installed before theme or adapter
+work. Diagnostics retain scrubbed message and stack, lifecycle phase, flow, state,
+engine, viewport, emitting document URL/origin/id, frame id and committed
+navigation generation. Native events without an attributable frame remain
+explicitly unknown; the initial blank document is identified only before any
+navigation. Caught adapter, entry, control and break exceptions keep their cause
+and the current lifecycle context. No observer prevents an exception or changes
+storage, authentication or product state.

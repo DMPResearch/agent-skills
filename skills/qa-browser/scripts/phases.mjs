@@ -4,6 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {steps,inspect} from './browser.mjs';
 import {trackNavigations} from './navigation.mjs';
 import {observeRuntime,verifyIdentity} from './runtime.mjs';
+import {observeErrors} from './errors.mjs';
 import {redact} from './contract.mjs';
 
 export function servicePacer(intervals={}){
@@ -56,12 +57,13 @@ export function terminalQueue(){
    for(const item of pending.values()){
     const {task,recipe,kind,cells,id}=item,{flow,state,engine,theme,size}=task;
     const record={id,scope:'route-engine',route:flow.url,engine,screen:flow.id,kind,target:recipe.selector||recipe.target,cells:cells.map(c=>c.id),status:'incomplete'};report.terminalChecks.push(record);
-    let context,timer,entered=false,observer;
+    let context,timer,entered=false,observer,errors;
     const runtime={screen:flow.id,state:state.id,engine,size,failures:[],gaps:[],diagnostics:[]};
     try{
      if(!recipe.safe||recipe.destructive&&!recipe.isolated)throw Error('terminal control requires declared safe isolated data');
      const [width,height]=size.split('x').map(Number);
      context=await browsers.get(engine).newContext({viewport:{width,height},colorScheme:theme,storageState:state.id==='signed-in'?sessions.get(engine):undefined});context.setDefaultTimeout(10000);
+     errors=await observeErrors(context,runtime);errors.phase('terminal-entry');
      timer=setTimeout(()=>context.close().catch(()=>{}),60000);
      if(config.themeInit)await context.addInitScript(config.themeInit.replaceAll('THEME',JSON.stringify(theme)));
      await adapter?.authenticate?.({context,state:state.id,config,flow,pace:env.pace});
@@ -74,15 +76,15 @@ export function terminalQueue(){
      await steps(page,[...state.setup||[],...flow.steps],root,undefined,navigation.run,env.pace);
      if(!await observer.settle())throw Error('in-flight entry requests unresolved before terminal action');
      await root.locator(recipe.selector||recipe.target).waitFor({state:'attached'});
-     entered=true;
+     entered=true;errors.phase('terminal-action');
      await steps(page,recipe.steps,root,kind==='break'?recipe.target:undefined,navigation.run,env.pace);
      const settled=await observer.settle();
      const failures=await inspect(page);if(failures.length)throw Error(failures.join('; '));
      const path=join(out,'terminal-'+id+'.png');await page.screenshot({path,fullPage:true,mask:config.redactSelectors?.map(s=>root.locator(s))||[]});cells[0].frames.push(path);record.frame=path;
      const gaps=navigation.unclassified().filter(r=>!observer.expectedCancellation(r));if(gaps.length)throw Error('unclassified cancelled request: '+redact(gaps[0].url()));
      record.status=runtime.failures.length?'fail':settled&&!runtime.gaps.length?'pass':'incomplete';
-    }catch(error){record.error=redact(error.message);if(entered){record.status='fail';for(const cell of cells)cell.failures.push('shared terminal expected effect failed: '+record.target+'; '+record.error);}else report.gaps.push('shared terminal check unavailable: '+id+'; '+record.error);}
-    finally{if(observer)await observer.settle();clearTimeout(timer);if(context)await context.close().catch(()=>{});if(runtime.failures.length)record.status='fail';else if(runtime.gaps.length)record.status='incomplete';}
+    }catch(error){errors?.caught(error);record.error=redact(error.message);if(entered){record.status='fail';for(const cell of cells)cell.failures.push('shared terminal expected effect failed: '+record.target+'; '+record.error);}else report.gaps.push('shared terminal check unavailable: '+id+'; '+record.error);}
+    finally{if(observer)await observer.settle();await errors?.finish();clearTimeout(timer);if(context)await context.close().catch(()=>{});if(runtime.failures.length)record.status='fail';else if(runtime.gaps.length)record.status='incomplete';}
     for(const cell of cells){
      cell.failures.push(...runtime.failures);cell.gaps.push(...runtime.gaps);cell.diagnostics||=[];cell.diagnostics.push(...runtime.diagnostics);cell.observations||=[];cell.observations.push(...runtime.observations||[]);
      if(['pass','fail'].includes(record.status))cell.gaps=cell.gaps.filter(g=>g!=='terminal check pending: '+id);
