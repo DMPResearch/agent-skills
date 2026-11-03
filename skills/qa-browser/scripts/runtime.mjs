@@ -1,3 +1,4 @@
+import {trackNavigations} from './navigation.mjs';
 import {redact} from './contract.mjs';
 import {validateObservations,requestObservation,warningObservation} from './observations.mjs';
 
@@ -10,6 +11,16 @@ export function observeRuntime(page,cell,config={},failures=cell.failures){
   const prior=seen.get(request)||new Set();if(!prior.has(outcome)){cell.observations.push({kind:'external-request',classId:rule.id,owner:rule.owner,reason:redact(rule.reason),outcome,method:request.method(),resourceType:request.resourceType(),url:redact(request.url()),port:new URL(request.url()).port||'default'});prior.add(outcome);seen.set(request,prior);}
   return true;
  };
+ const navigations=new Map(),cancelled=new Set(),audited=new Set();
+ const watch=page=>navigations.set(page,trackNavigations(page));
+ if(typeof page.pages==='function'){for(const current of page.pages())watch(current);page.on('page',watch);}else watch(page);
+ const auditCancellations=()=>{
+  for(const request of cancelled){
+   const receipt=[...navigations.values()].map(nav=>nav.cancellation(request)).find(Boolean);
+   if(receipt){if(!audited.has(request)){cell.diagnostics.push({kind:'navigation-cancellation',...receipt,url:redact(receipt.url),replacement:redact(receipt.replacement),error:redact(receipt.error)});audited.add(request);}}
+   else if(!expected(request,'cancelled')){const gap='unclassified cancelled request: '+redact(request.url());if(!cell.gaps.includes(gap))cell.gaps.push(gap);}
+  }
+ };
  const pending=new Set();page.on('request',request=>pending.add(request));
  page.on('console',message=>{
   if(!['error','warning'].includes(message.type()))return;
@@ -19,9 +30,9 @@ export function observeRuntime(page,cell,config={},failures=cell.failures){
   target.push('console '+message.type()+' at '+redact(source.url||'[inline]')+':'+source.lineNumber+'; '+redact(message.text()));
  });
  page.on('response',response=>{if(response.status()>=400)failures.push(`HTTP ${response.status()}: ${redact(response.url())}`);});
- page.on('requestfailed',request=>{pending.delete(request);const error=request.failure()?.errorText||'';if(!/ABORTED|cancelled|canceled/i.test(error))failures.push('request failed: '+redact(request.url())+'; '+redact(error));});
+ page.on('requestfailed',request=>{pending.delete(request);const error=request.failure()?.errorText||'';if(/ABORTED|cancelled|canceled/i.test(error))cancelled.add(request);else failures.push('request failed: '+redact(request.url())+'; '+redact(error));});
  page.on('requestfinished',request=>{pending.delete(request);if(request.timing().responseEnd>Number(config.slowRequestMs||5000))failures.push('slow request: '+redact(request.url()));});
- return {expectedCancellation:request=>expected(request,'cancelled'),async settle(){
+ return {auditCancellations,expectedCancellation:request=>expected(request,'cancelled'),async settle(){
   const deadline=Date.now()+2000;
   do{
    await new Promise(resolve=>setTimeout(resolve,25));

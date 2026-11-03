@@ -6,7 +6,7 @@ export function trackNavigations(page){
  const resources=new Map(),generations=new Map(),listeners=new Map();
  const pending=new Set(),cancelled=[],superseded=new Map(),committed=new Set(),latest=new Map(),scopes=[];
  page.on('request',r=>{
-  try{const frame=r.frame();resources.set(r,{frame,generation:generations.get(frame)||0});}catch{}
+  try{const frame=r.frame();resources.set(r,{frame,generation:generations.get(frame)||0,active:true});}catch{}
   if(!r.isNavigationRequest()||r.resourceType()!=='document')return;
   const frame=r.frame(),scope=scopes.at(-1)?.requests;
   if(scope){
@@ -24,16 +24,21 @@ export function trackNavigations(page){
   const generation=(generations.get(frame)||0)+1;generations.set(frame,generation);
   if(scope&&(newDocument&&scope.requests.has(r)||historyBlank))for(const [request,record]of resources){
    if(request===r||record.frame!==frame||record.generation>=generation||record.replacement)continue;
-   record.replacement=frame.url();
-   for(const callback of listeners.get(request)||[])callback(record.replacement);
+   if(record.active)record.replacement=frame.url();
+   if(record.active||scope.active.has(request)){record.bodyReplacement=frame.url();for(const callback of listeners.get(request)||[])callback(record.bodyReplacement);}
   }
-  if(scope?.history&&frame===page.mainFrame())scope.historyCommitted=true;
+  if(scope?.history&&frame===page.mainFrame()){scope.historyCommitted=true;scope.destination=frame.url();}
  });
- page.on('requestfinished',r=>pending.delete(r));
+ page.on('requestfinished',r=>{pending.delete(r);const record=resources.get(r);if(record)record.active=false;});
  page.on('requestfailed',r=>{
-  pending.delete(r);
+  pending.delete(r);const record=resources.get(r);if(record)record.active=false;
   if(/ABORTED|cancelled|canceled/i.test(r.failure()?.errorText||''))cancelled.push(r);
  });
+ const cancellation=request=>{
+  if(!cancelled.includes(request))return;
+  const record=resources.get(request),replacement=record?.replacement||(committed.has(superseded.get(request))?(superseded.get(request).destination||superseded.get(request).url()):undefined);
+  if(replacement)return {url:request.url(),error:request.failure()?.errorText||'',replacement,generation:record?.generation,reason:'request cancelled by committed tool document replacement'};
+ };
  const tracker={
   identity:frame=>({generation:generations.get(frame)||0,url:frame.url()}),
   bodyReplacementPending(request){
@@ -42,12 +47,12 @@ export function trackNavigations(page){
   },
   onBodyReplacement(request,callback){
    const record=resources.get(request);
-   if(record?.replacement){callback(record.replacement);return ()=>{};}
+   if(record?.bodyReplacement){callback(record.bodyReplacement);return ()=>{};}
    const callbacks=listeners.get(request)||new Set();callbacks.add(callback);listeners.set(request,callbacks);
    return ()=>{callbacks.delete(callback);if(!callbacks.size)listeners.delete(request);};
   },
   run:async(operation,{history=false}={})=>{
-   const scope={requests:new Set(pending),history,candidates:[...pending],historyCommitted:false};scopes.push(scope);
+   const scope={active:new Set([...resources].filter(([,r])=>r.active).map(([request])=>request)),requests:new Set(pending),history,candidates:[...pending],historyCommitted:false};scopes.push(scope);
    try{
     const result=await operation();
     // History can commit a cached document or about:blank without a new request.
@@ -58,8 +63,10 @@ export function trackNavigations(page){
     return result;
    }finally{scopes.splice(scopes.indexOf(scope),1);}
   },
-  cancellations:()=>cancelled.filter(r=>resources.get(r)?.replacement).map(r=>({url:r.url(),error:r.failure()?.errorText||'',replacement:resources.get(r).replacement,generation:resources.get(r).generation,reason:'request cancelled by committed tool document replacement'})),
-  unclassified:()=>cancelled.filter(r=>!resources.get(r)?.replacement&&!committed.has(superseded.get(r)))
+  cancellation,
+  cancellations:()=>cancelled.map(cancellation).filter(Boolean),
+  unclassified:()=>cancelled.filter(r=>!cancellation(r))
+
  };
  trackers.set(page,tracker);return tracker;
 }

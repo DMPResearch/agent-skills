@@ -405,12 +405,19 @@ and the current lifecycle context. No observer prevents an exception or changes
 storage, authentication or product state.
 
 Cancelled subresources use the same committed-document evidence as body reads.
-A tool action which actually replaces their document records request URL,
+A request must still be active when a tool action commits its replacement
+document before it can receive a network-cancellation receipt. Already aborted
+or completed subresources never acquire that proof from later replay. A request
+which the browser aborts before commit remains unclassified. Receipts retain request URL,
 underlying cancellation error, original navigation generation and replacement
 URL in diagnostics. Same-document history changes, explicit aborts without a
 replacement, failed navigations and unowned navigation remain gaps. Browser
 requests without a cancellation event do not receive a cancellation receipt.
 First-party HTTP, transport and asset-integrity failures are never exempted.
+Native, terminal and standing capture use one runtime cancellation audit. It
+retains every observed page, including closed standing pages, and makes
+unclassified cancellations gaps before accepting results. Pending body-read
+diagnostics use separate evidence and cannot grant request cancellation coverage.
 
 ### Persistent standing entry inside the run
 
