@@ -28,6 +28,7 @@ Install with that repo's `install.sh`; load the skill by name, or read its
 - `implement-well`: any implementation, from the smallest plan to the final independent critique.
 - `cross-review`: finished implementation, before reporting done, committing or pushing; dispatched workers hand review to the orchestrator.
 - `verify-live`: any UI, flow, link or native change, before calling it done or sharing it.
+- `show-proof`: whenever you hand back an implementation, report a scenario table with the screenshots, clip, test output and critic verdict behind each row.
 - `babysit-pr`: after opening a PR, or when asked to monitor one or get it green.
 - `merge-safe-prs`: when asked to merge, or when babysit-pr reports ready; merge only what the owner authorized.
 

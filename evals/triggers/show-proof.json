@@ -1,0 +1,16 @@
+[
+  {"query": "Add a dark mode toggle to app/index.html and tell me when it's done.", "should_trigger": true},
+  {"query": "Fix the bug where the export button in app/index.html does nothing on a second click.", "should_trigger": true},
+  {"query": "Implement the slug cache in utils.py we discussed, then report back.", "should_trigger": true},
+  {"query": "Build the signup form in app/index.html with email validation.", "should_trigger": true},
+  {"query": "Is the new checkout flow working now? Show me.", "should_trigger": true},
+  {"query": "Make minutes_label in utils.py handle negative numbers and let me know.", "should_trigger": true},
+  {"query": "You're the worker on this task: add retry with backoff to fetch_page in utils.py, then hand your results back to the orchestrator.", "should_trigger": true},
+  {"query": "You said the slug cache in utils.py was done yesterday. Prove it works.", "should_trigger": true},
+  {"query": "Add a --dry-run flag to scripts/cleanup.py so it lists what it would delete. There is no UI.", "should_trigger": true},
+  {"query": "What does slugify in utils.py return for an empty string?", "should_trigger": false},
+  {"query": "Explain the difference between a squash merge and a rebase merge.", "should_trigger": false},
+  {"query": "List the files in app/.", "should_trigger": false},
+  {"query": "Summarise what utils.py does in two sentences.", "should_trigger": false},
+  {"query": "Quick progress check: which step of the plan are you on?", "should_trigger": false}
+]

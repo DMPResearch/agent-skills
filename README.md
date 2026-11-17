@@ -1,6 +1,6 @@
 # Agent skills
 
-Eight skills shared by DMPResearch agents across all of our
+Nine skills shared by DMPResearch agents across all of our
 projects. Each one is a folder with a `SKILL.md` in the
 [Agent Skills](https://agentskills.io) format, plus the scripts it runs.
 
@@ -12,6 +12,7 @@ projects. Each one is a folder with a `SKILL.md` in the
 | [`decide-or-ask`](skills/decide-or-ask/SKILL.md) | you are about to ask the owner something or stop for input |
 | [`cross-review`](skills/cross-review/SKILL.md) | a piece of work is finished, before reporting it done, committing or pushing |
 | [`verify-live`](skills/verify-live/SKILL.md) | any UI, flow, link or native change, before calling it done |
+| [`show-proof`](skills/show-proof/SKILL.md) | you hand back any implementation: scenarios run on the real build, a results table with screenshots, clip and test output |
 | [`babysit-pr`](skills/babysit-pr/SKILL.md) | a PR is open and has to get green |
 | [`merge-safe-prs`](skills/merge-safe-prs/SKILL.md) | the owner asked for a merge, or babysit-pr reports a PR ready |
 
@@ -39,7 +40,7 @@ shows what is installed and trusted.
 
 ## Universal
 
-The eight skills are product-neutral workflows for every DMPResearch repo.
+The nine skills are product-neutral workflows for every DMPResearch repo.
 `install.sh` links them into Claude Code, Codex, Cursor, Pi
 (`~/.pi/agent/skills`) and OpenCode (`${XDG_CONFIG_HOME:-~/.config}/opencode/skills`).
 Repo-specific brand, commands and approval rules stay in each repo's AGENTS.md.
@@ -110,7 +111,7 @@ python3 evals/run_evals.py scenarios    # does the agent behave right, hooks off
 python3 -I -m unittest discover -s evals/tests  # graders and fake-tool contracts
 ```
 
-All eight skills have positive and negative trigger cases; the default selects
+All nine skills have positive and negative trigger cases; the default selects
 every trigger file. Reference and implementation scenarios log capture ordering,
 credits, critic inputs and artifact hashes. They reject stale or same-family
 reviews, unresolved seeded smells and hand-drawn SVG. Their fake captures test
