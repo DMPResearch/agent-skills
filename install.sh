@@ -41,12 +41,15 @@ done
 for dir in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.pi/agent/skills" "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills" "$HOME/.cursor/agents"; do
   for link in "$dir"/*; do
     [ -L "$link" ] || continue
-    case "$(readlink "$link")" in
+    target="$(readlink "$link")"
+    case "$target" in */../*|*/..) continue ;; esac
+    case "$target" in
       "$ROOT"/skills/*|"$ROOT"/vendor/pstack/*) [ -e "$link" ] || { rm "$link"; echo "removed retired link $link"; } ;;
     esac
   done
 done
 HOOKS="$ROOT/hooks"
+mkdir -p "$HOME/.agents"
 if [ -L "$HOME/.agents/hooks" ]; then rm "$HOME/.agents/hooks"
 elif [ -e "$HOME/.agents/hooks" ]; then
   mkdir -p "$HOME/.agents/skills-backup/$STAMP"; mv "$HOME/.agents/hooks" "$HOME/.agents/skills-backup/$STAMP/agents-hooks"
