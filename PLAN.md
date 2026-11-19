@@ -329,3 +329,15 @@ Correction: when accepting a no-effect declaration, bind its action to the inven
 - Correction: when testing a no-effect control, observe the entire declared cap rather than ending after an initially stable interval, and include document, shadow, cookie, popup and navigation signals. This remains bounded observation, not a guarantee about future work.
 - Final verification: skill-verified.log records 58 passed, zero failed/cancelled/skipped with QA_PW_PATH set, including the strengthened reload fixture (shadow setup only in the shadow test). Read the full saved transcript after completion. The earlier sequential rerun also passed 58; final verification repeated after strengthening that test. Repository totals remain 223 passed, all seven command exits 0. No production edits occurred after the focused green run.
 - No other production function changed. Test servers, contexts, popups and browsers are closed in finally blocks. No paid model eval, push, amend or merge was performed; parent owns independent rereview. The initial WebKit cancellation gap remains disclosed in the retained first-run transcript and is outside this verifyNoEffect-only repair.
+
+## pstack for every agent (owner, 2026-11-20)
+
+Owner: "Let's add the pstack skill to all agents working on dmpresearch projects". Decided with the owner: our rules win; official source, pinned.
+
+1. Vendor github.com/cursor/plugins pstack at 0b46ec3 (v0.15.46, MIT) in vendor/pstack, without automations/ (Benny), assets/ and setup-pstack (Cursor-only). Proof: PIN file, secret scan clean, script review (gh and TLC process spawns only).
+2. install.sh links vendor/pstack/skills/* beside ours into all five tool folders, skips any pstack name that ours already uses, and links pstack's two subagents into ~/.cursor/agents only (Cursor model ids and paths). Proof: bash -n, a run on the M4, resolved links, `../../docs` paths resolve through the links.
+3. repo-agents-snippet.md and the owner's ~/.claude/AGENTS.md section 7 state the precedence. Proof: text.
+4. Install on the M2 and G14 from this commit. Proof: link counts there.
+5. Commit locally; pushing to DMPResearch/agent-skills is the owner's call.
+
+Decided: not vendored into each product repo's .agents/skills (58 folders per repo for CI and cloud reviewers that do not run playbooks); the snippet line tells them it exists.

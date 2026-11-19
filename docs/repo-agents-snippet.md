@@ -32,6 +32,13 @@ Install with that repo's `install.sh`; load the skill by name, or read its
 - `babysit-pr`: after opening a PR, or when asked to monitor one or get it green.
 - `merge-safe-prs`: when asked to merge, or when babysit-pr reports ready; merge only what the owner authorized.
 
+pstack (Lauren Tan's MIT workflow and principle skills, pinned in
+`vendor/pstack/PIN`) is installed beside these: `poteto-mode` and its playbooks
+on request, and its `principle-*`, `architect`, `interrogate`, `tdd`, `unslop`
+and other skills wherever they fit. The skills above and this AGENTS.md win
+where pstack differs (reviews, PR babysitting, merging, reporting, machine
+and credential rules).
+
 This repo's AGENTS.md wins wherever a skill says otherwise. Where skills are
 not installed (CI, cloud reviewers), this file alone applies. A check a skill
 would have run and could not is unrun, never a pass: say so.
