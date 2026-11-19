@@ -6,6 +6,7 @@
 # An existing real folder of the same name is moved to ~/.agents/skills-backup,
 # never deleted (a copy left inside a skills folder would load twice).
 set -eu
+shopt -s nullglob
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 STAMP="$(date +%Y%m%d%H%M%S)"
 # Our skills, then the pinned pstack (vendor/pstack/PIN). Our AGENTS.md and
@@ -29,10 +30,21 @@ done
 mkdir -p "$HOME/.cursor/agents"
 for agent in "$ROOT"/vendor/pstack/agents/*.md; do
   dest="$HOME/.cursor/agents/$(basename "$agent")"
-  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+  if [ -L "$dest" ]; then rm "$dest"
+  elif [ -e "$dest" ]; then
     mkdir -p "$HOME/.agents/skills-backup/$STAMP"; mv "$dest" "$HOME/.agents/skills-backup/$STAMP/cursor-agent-$(basename "$agent")"
   fi
-  ln -sf "$agent" "$dest"
+  ln -s "$agent" "$dest"
+done
+# Remove links this install made whose source was retired (a later pin or a
+# deleted skill). Only links pointing into this checkout are touched.
+for dir in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.pi/agent/skills" "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills" "$HOME/.cursor/agents"; do
+  for link in "$dir"/*; do
+    [ -L "$link" ] || continue
+    case "$(readlink "$link")" in
+      "$ROOT"/skills/*|"$ROOT"/vendor/pstack/*) [ -e "$link" ] || { rm "$link"; echo "removed retired link $link"; } ;;
+    esac
+  done
 done
 HOOKS="$ROOT/hooks"
 if [ -L "$HOME/.agents/hooks" ]; then rm "$HOME/.agents/hooks"

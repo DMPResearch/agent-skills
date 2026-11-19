@@ -1,0 +1,4 @@
+# Added by DMPResearch/agent-skills (not upstream): matches the upstream
+# disable-model-invocation: true for Codex.
+policy:
+  allow_implicit_invocation: false

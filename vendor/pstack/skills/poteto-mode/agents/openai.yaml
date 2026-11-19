@@ -1,0 +1,3 @@
+# Added by DMPResearch/agent-skills (not upstream): poteto-mode is opt-in.
+policy:
+  allow_implicit_invocation: false

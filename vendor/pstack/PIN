@@ -4,3 +4,6 @@ version: 0.15.46
 license: MIT (c) 2026 Lauren Tan, see LICENSE
 excluded: automations/ (dormant Benny pack), assets/, skills/setup-pstack (Cursor-only)
 precedence: the owner AGENTS.md and the shared skills in skills/ win where pstack disagrees (owner, 2026-11-20)
+local additions: skills/*/agents/openai.yaml (Codex policy allow_implicit_invocation: false, matching upstream disable-model-invocation: true)
+not supported in this link-only install: /setup-pstack and per-role models (Cursor plugin only); the comment-sicko and poteto-agent subagents are linked for Cursor only, so skills that call them (no-comments, poteto-mode delegates) need Cursor or run the review inline elsewhere
+entering poteto-mode is opt-in (explicit /poteto-mode or $poteto-mode); a leaf skill cannot activate it, and nothing in pstack replaces owner approval, the shared PR skills or cross-review
