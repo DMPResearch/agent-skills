@@ -341,3 +341,4 @@ Owner: "Let's add the pstack skill to all agents working on dmpresearch projects
 5. Commit locally; pushing to DMPResearch/agent-skills is the owner's call.
 
 Decided: not vendored into each product repo's .agents/skills (58 folders per repo for CI and cloud reviewers that do not run playbooks); the snippet line tells them it exists.
+- Done 2026-11-20: commit 5f75a1c on branch pstack-vendor. M4: install exit 0, 67 linked (10 ours + 57 pstack), all five folders, 2 Cursor agents, ../../docs resolves. M2: same commit via bundle, branch pstack-vendor checked out, install exit 0, 67 linked. G14: unreachable (T3 relay did not answer); install there when it is back: fetch the commit, `bash install.sh` in Git Bash. Not pushed.
